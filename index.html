@@ -37,7 +37,6 @@
         .counter { text-align: center; font-size: 14px; color: #8e8e93; margin-top: 5px; }
         .output-box { font-family: monospace; background: #e5e5ea; padding: 10px; border-radius: 8px; font-size: 11px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
         
-        /* Hilfsklasse zum Verbergen */
         .hidden { display: none !important; }
     </style>
 </head>
@@ -48,10 +47,8 @@
 
     <!-- 1. SCANNER CARD -->
     <div class="card">
-        <!-- Manueller Start-Button für das iPhone -->
         <button id="btn-start-cam" class="btn-primary" onclick="startScanner()">Kamera aktivieren</button>
         
-        <!-- Das Kamerafenster ist initial unsichtbar -->
         <div id="reader" class="hidden"></div>
         <div id="scan-result" class="result-box">Bitte Kamera aktivieren...</div>
         <button id="btn-restart" class="btn-secondary" style="display:none;" onclick="startScanner()">Neuen Scan starten</button>
@@ -94,32 +91,48 @@
 </div>
 
 <script>
-    let html5QrcodeScanner;
+    let html5QrCode;
     const STORAGE_KEY = "bma_scanned_detectors";
 
-    // Beim Laden nur die bestehende UI-Vorschau laden
     window.onload = function() {
         updatePreview();
     };
 
     function startScanner() {
-        // UI umschalten: Button weg, Kamera-Box herzeigen
         document.getElementById('btn-start-cam').classList.add('hidden');
         document.getElementById('reader').classList.remove('hidden');
         document.getElementById('btn-restart').style.display = 'none';
         document.getElementById('scan-result').innerText = "Kamera wird gestartet...";
         
-        // Scanner initialisieren
-        html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
-            fps: 15, 
-            qrbox: { width: 250, height: 250 },
-            rememberLastUsedCamera: true,
-            supportedScanTypes: [
-                Html5QrcodeScanType.SCAN_TYPE_CAMERA
-            ]
-        }, false);
+        // Wir nutzen hier die Pro-Klasse "Html5Qrcode" für direkte, fehlerfreie iOS-Kontrolle
+        if (!html5QrCode) {
+            html5QrCode = new Html5Qrcode("reader");
+        }
         
-        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+        // iOS-optimierte Hardware-Konfiguration
+        const config = { 
+            fps: 10, 
+            qrbox: function(viewfinderWidth, viewfinderHeight) {
+                // Erstellt ein perfekt skaliertes, quadratisches Scanfenster für Mobilgeräte
+                const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                const size = Math.floor(minEdge * 0.7);
+                return { width: size, height: size };
+            }
+        };
+        
+        // Startet explizit die Rückkamera ("environment") mit flexiblen Videoauflösungen
+        html5QrCode.start(
+            { facingMode: "environment" }, 
+            config,
+            onScanSuccess,
+            onScanFailure
+        ).then(() => {
+            document.getElementById('scan-result').innerText = "Kamera aktiv. Code scannen...";
+        }).catch(err => {
+            document.getElementById('scan-result').innerText = "Fehler: " + err;
+            document.getElementById('btn-start-cam').classList.remove('hidden');
+            console.error("Kamerastart fehlgeschlagen", err);
+        });
     }
 
     function onScanSuccess(decodedText, decodedResult) {
@@ -128,15 +141,17 @@
         document.getElementById('scan-result').innerText = "Erfolgreich: " + cleanText;
         document.getElementById('melder-id').value = cleanText;
         
-        html5QrcodeScanner.clear().then(() => {
-            document.getElementById('btn-restart').style.display = 'block';
-        }).catch(err => console.error("Fehler beim Stoppen des Scanners", err));
+        if (html5QrCode && html5QrCode.isScanning) {
+            html5QrCode.stop().then(() => {
+                document.getElementById('btn-restart').style.display = 'block';
+            }).catch(err => console.error("Fehler beim Stoppen", err));
+        }
         
         if (navigator.vibrate) navigator.vibrate(100);
     }
 
     function onScanFailure(error) {
-        // Ignorieren für bessere Performance
+        // Stummschalten für bessere iOS-Performance
     }
 
     function getStoredData() {
@@ -212,12 +227,3 @@
     }
 
     function clearLocalStorage() {
-        if (confirm("Möchten Sie wirklich ALLE gespeicherten Melderdaten von diesem iPhone löschen?")) {
-            localStorage.removeItem(STORAGE_KEY);
-            updatePreview();
-        }
-    }
-</script>
-
-</body>
-</html>
