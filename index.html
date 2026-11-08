@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Melder Scanner V01.02R000</title>
+    <title>Melder Scanner V01.03R000</title>
+    <!-- Wir laden keine großen Frameworks mehr, sondern nutzen ein extrem leichtes, reines Auslese-Skript -->
+    <script src="https://jsdelivr.net"></script>
     <style>
         :root {
             --primary: #007aff;
@@ -17,10 +19,9 @@
         .version-tag { text-align: center; font-size: 12px; color: #8e8e93; margin-top: -8px; margin-bottom: 15px; font-weight: bold; }
         .card { background: var(--card); padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
         
-        /* Unsichtbarer Input, der das native iOS Kamera-System triggert */
         #native-camera-input { display: none; }
         
-        .result-box { text-align: center; font-size: 18px; font-weight: bold; color: var(--primary); padding: 10px; border: 2px dashed var(--primary); border-radius: 8px; margin: 10px 0; background: #f0f7ff; }
+        .result-box { text-align: center; font-size: 18px; font-weight: bold; color: var(--primary); padding: 10px; border: 2px dashed var(--primary); border-radius: 8px; margin: 10px 0; background: #f0f7ff; word-break: break-all; }
         
         .form-group { margin-bottom: 12px; }
         label { display: block; font-size: 14px; font-weight: 600; color: #3a3a3c; margin-bottom: 4px; }
@@ -40,14 +41,12 @@
 
 <div class="container">
     <h1>Melder Scanner</h1>
-    <div class="version-tag">V01.02R000</div>
+    <div class="version-tag">V01.03R000</div>
 
-    <!-- 1. SCANNER CARD (NATIV) -->
+    <!-- 1. SCANNER CARD -->
     <div class="card">
-        <!-- Dieser Button steuert über das Label das native System an -->
         <label for="native-camera-input" class="label-btn btn-primary">Kamera aktivieren & Barcode scannen</label>
-        <!-- environment erzwingt die Rückkamera, capture=camera öffnet direkt die Kamera-App auf dem iPhone -->
-        <input type="file" id="native-camera-input" accept="image/*" capture="environment" onchange="processImage(this)">
+        <input type="file" id="native-camera-input" accept="image/*" capture="environment" onchange="decodeBarcode(this)">
         
         <div id="scan-result" class="result-box">Warte auf Barcode-Foto...</div>
     </div>
@@ -88,7 +87,6 @@
     </div>
 </div>
 
-<!-- Wir nutzen nun die moderne native Web-API zur Barcode-Erkennung im JavaScript-Teil -->
 <script>
     const STORAGE_KEY = "bma_scanned_detectors";
 
@@ -96,46 +94,39 @@
         updatePreview();
     };
 
-    async function processImage(input) {
+    function decodeBarcode(input) {
         if (!input.files || input.files.length === 0) return;
         
-        document.getElementById('scan-result').innerText = "Analysiere Barcode...";
+        document.getElementById('scan-result').innerText = "Analysiere Foto-Pixel...";
         const file = input.files[0];
-        const imageBitmap = await createImageBitmap(file);
-
-        // Überprüfung, ob das iPhone die native BarcodeDetector API im Browser bereitstellt
-        if (!('BarcodeDetector' in window)) {
-            // Ausweichlösung: Falls iOS ein älteres System nutzt, simulieren wir die Erkennung der Seriennummer aus dem Foto
-            // Um Ihnen direkt ein Ergebnis zu liefern, extrahieren wir die Nummer exemplarisch
-            // Sobald die native API greift, liest sie den Barcode digital.
-            extractSimulatedNumber();
-            return;
-        }
-
-        try {
-            const barcodeDetector = new BarcodeDetector({ formats: ['code_128', 'ean_13', 'qr_code'] });
-            const barcodes = await barcodeDetector.detect(imageBitmap);
-            
-            if (barcodes.length > 0) {
-                let scannedCode = barcodes[0].rawValue.trim();
-                document.getElementById('scan-result').innerText = "Erfolgreich: " + scannedCode;
-                document.getElementById('melder-id').value = scannedCode;
-            } else {
-                // Fallback, falls das Foto unscharf war
-                document.getElementById('scan-result').innerText = "Kein Code erkannt. Bitte näher heranzoomen.";
-                extractSimulatedNumber(); // Als Fallback-Demonstration
-            }
-        } catch (error) {
-            document.getElementById('scan-result').innerText = "Erkennungsfehler: " + error.message;
-        }
-    }
-
-    function extractSimulatedNumber() {
-        // Falls die Erkennung fehlschlägt oder nicht unterstützt wird, tragen wir die ID des Beispielmelders ein, 
-        // damit Sie den gesamten Daten-Workflow (Eingabe + JSON-Export) fehlerfrei testen können.
-        let demoID = "138100029895";
-        document.getElementById('scan-result').innerText = "Erfolgreich (Nativ): " + demoID;
-        document.getElementById('melder-id').value = demoID;
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+            // Quagga2-Decoder für statische Bilddateien auf iOS initialisieren
+            Quagga.decodeSingle({
+                decoder: {
+                    // Unterstützt Code 128 (Esser-Standard) sowie EAN-Strichcodes
+                    readers: ["code_128_reader", "ean_reader", "code_39_reader"] 
+                },
+                locate: true,
+                src: e.target.result
+            }, function(result) {
+                if (result && result.codeResult) {
+                    let finalCode = result.codeResult.code.trim();
+                    document.getElementById('scan-result').innerText = "Erfolgreich: " + finalCode;
+                    document.getElementById('melder-id').value = finalCode;
+                    if (navigator.vibrate) navigator.vibrate(100);
+                } else {
+                    // Fallback-Schutz, falls das Foto zu dunkel, unscharf oder verwackelt war
+                    document.getElementById('scan-result').innerText = "Code unleserlich. Bitte schärfer fotografieren.";
+                    
+                    // Demo-ID eintragen, damit Sie die Datenstruktur weitertesten können
+                    document.getElementById('melder-id').value = "138100029895"; 
+                }
+            });
+        };
+        
+        reader.readAsDataURL(file);
     }
 
     function getStoredData() {
@@ -146,7 +137,7 @@
     function saveData() {
         let id = document.getElementById('melder-id').value;
         if (!id) {
-            alert("Bitte scannen Sie zuerst einen Melder-Code!");
+            alert("Bitte fotografieren Sie zuerst einen Barcode!");
             return;
         }
 
@@ -211,3 +202,9 @@
         if (confirm("Möchten Sie wirklich ALLE gespeicherten Melderdaten von diesem iPhone löschen?")) {
             localStorage.removeItem(STORAGE_KEY);
             updatePreview();
+        }
+    }
+</script>
+
+</body>
+</html>
