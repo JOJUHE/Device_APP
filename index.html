@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Melder Scanner V01.05R000</title>
-    <!-- Wir nutzen Tesseract für direkte optische Nummernerkennung (OCR) -->
-    <script src="https://jsdelivr.net"></script>
+    <title>Melder Scanner V01.06R000</title>
     <style>
         :root {
             --primary: #007aff;
@@ -19,16 +17,15 @@
         .version-tag { text-align: center; font-size: 12px; color: #8e8e93; margin-top: -8px; margin-bottom: 15px; font-weight: bold; }
         .card { background: var(--card); padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
         
-        #native-camera-input { display: none; }
-        
-        .result-box { text-align: center; font-size: 18px; font-weight: bold; color: var(--primary); padding: 10px; border: 2px dashed var(--primary); border-radius: 8px; margin: 10px 0; background: #f0f7ff; word-break: break-all; }
+        .hint-box { text-align: center; font-size: 14px; color: var(--primary); padding: 12px; border: 1px dashed var(--primary); border-radius: 8px; margin-bottom: 15px; background: #f0f7ff; line-height: 1.4; }
         
         .form-group { margin-bottom: 12px; }
         label { display: block; font-size: 14px; font-weight: 600; color: #3a3a3c; margin-bottom: 4px; }
         input, textarea { width: 100%; padding: 10px; border: 1px solid #c7c7cc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #fff; }
         textarea { resize: vertical; height: 60px; font-family: inherit; }
+        input:focus, textarea:focus { border-color: var(--primary); outline: none; }
         
-        button, .label-btn { display: block; width: 100%; padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; text-align: center; box-sizing: border-box; text-decoration: none; }
+        button { display: block; width: 100%; padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; text-align: center; box-sizing: border-box; transition: background 0.2s; margin-top: 5px; }
         .btn-primary { background-color: var(--primary); color: white; }
         .btn-success { background-color: var(--success); color: white; }
         .btn-secondary { background-color: #8e8e93; color: white; }
@@ -41,20 +38,20 @@
 
 <div class="container">
     <h1>Melder Scanner</h1>
-    <div class="version-tag">V01.05R000</div>
+    <div class="version-tag">V01.06R000</div>
 
-    <div class="card">
-        <label for="native-camera-input" class="label-btn btn-primary">Kamera aktivieren & Melder fotografieren</label>
-        <input type="file" id="native-camera-input" accept="image/*" capture="environment" onchange="decodeTextFromImage(this)">
-        
-        <div id="scan-result" class="result-box">Warte auf Melder-Foto...</div>
+    <div class="hint-box">
+        <strong>💡 iPhone-Tipp für schnellen Scan:</strong><br>
+        Tippen Sie in das Feld „Gescannte Nummer“. Wählen Sie über der Tastatur das <strong>Kamera-Symbol</strong> (oder halten Sie das Feld gedrückt und wählen Sie <em>„Text von Kamera“</em>), um die Nummer direkt vom Melder einzuscannen!
     </div>
 
+    <!-- DATA ENTRY FORM -->
     <div class="card" id="form-card">
         <h2>Eingabefelder</h2>
         <div class="form-group">
             <label>Gescannte Nummer</label>
-            <input type="text" id="melder-id" readonly style="background-color: #e5e5ea; color: #555;">
+            <!-- Eingabefeld geöffnet für das native iOS Live-Text Feature -->
+            <input type="text" id="melder-id" placeholder="Hier tippen -> Kamera-Symbol wählen">
         </div>
         <div class="form-group">
             <label>Gruppennummer</label>
@@ -75,6 +72,7 @@
         <button class="btn-success" onclick="saveData()">Speichern</button>
     </div>
 
+    <!-- EXPORT / DATA MANAGEMENT -->
     <div class="card">
         <h2>Gespeicherte Daten (JSON)</h2>
         <div class="counter" id="data-count">0 Melder gespeichert</div>
@@ -91,69 +89,15 @@
         updatePreview();
     };
 
-    function decodeTextFromImage(input) {
-        if (!input.files || input.files.length === 0) return;
-        
-        document.getElementById('scan-result').innerText = "Bereite Bilddaten vor...";
-        const file = input.files[0];
-        const reader = new FileReader();
-        
-        reader.onload = function(e) {
-            const img = new Image();
-            img.onload = function() {
-                // Skalieren für extrem schnelle OCR-Berechnung
-                const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 1000;
-                const scale = MAX_WIDTH / img.width;
-                canvas.width = MAX_WIDTH;
-                canvas.height = img.height * scale;
-                
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                
-                document.getElementById('scan-result').innerText = "Nummer wird digital gelesen...";
-                const compressedSrc = canvas.toDataURL('image/jpeg', 0.85);
-                
-                // Startet das Auslesen der Ziffern aus dem Foto
-                Tesseract.recognize(
-                    compressedSrc,
-                    'eng', // Zahlen werden im englischen Zeichensatz perfekt erkannt
-                    { logger: m => console.log(m) }
-                ).then(({ data: { text } }) => {
-                    // Filtert alle reinen Zahlenfolgen (Seriennummern) heraus
-                    let matches = text.match(/\d{8,14}/g); 
-                    
-                    if (matches && matches.length > 0) {
-                        let finalCode = matches[0].trim();
-                        document.getElementById('scan-result').innerText = "Erfolgreich gelesen: " + finalCode;
-                        document.getElementById('melder-id').value = finalCode;
-                        if (navigator.vibrate) navigator.vibrate(100);
-                    } else {
-                        // Zuverlässiges Backup-System, falls Text unscharf war
-                        document.getElementById('scan-result').innerText = "Bereit (Feineinstellung aktiv)";
-                        document.getElementById('melder-id').value = "138100029895";
-                    }
-                }).catch(err => {
-                    console.error(err);
-                    document.getElementById('scan-result').innerText = "Bereit (Workflow aktiv)";
-                    document.getElementById('melder-id').value = "138100029895";
-                });
-            };
-            img.src = e.target.result;
-        };
-        
-        reader.readAsDataURL(file);
-    }
-
     function getStoredData() {
         let data = localStorage.getItem(STORAGE_KEY);
         return data ? JSON.parse(data) : [];
     }
 
     function saveData() {
-        let id = document.getElementById('melder-id').value;
+        let id = document.getElementById('melder-id').value.trim();
         if (!id) {
-            alert("Bitte fotografieren Sie zuerst einen Melder!");
+            alert("Bitte tragen Sie zuerst eine Melder-Nummer ein!");
             return;
         }
 
@@ -176,11 +120,11 @@
 
         localStorage.setItem(STORAGE_KEY, JSON.stringify(currentData));
 
+        // Formular leeren (außer Gruppe)
         document.getElementById('melder-id').value = "";
         document.getElementById('input-melder').value = "";
         document.getElementById('input-zusatz').value = "";
         document.getElementById('input-bemerkung').value = "";
-        document.getElementById('scan-result').innerText = "Warte auf Melder-Foto...";
 
         updatePreview();
         alert("Daten erfolgreich lokal gesichert!");
@@ -212,3 +156,15 @@
             let mailtoLink = "mailto:?subject=BMA%20Melder%20Export&body=" + encodeURIComponent(dataStr);
             window.location.href = mailtoLink;
         }
+    }
+
+    function clearLocalStorage() {
+        if (confirm("Möchten Sie wirklich ALLE gespeicherten Melderdaten von diesem iPhone löschen?")) {
+            localStorage.removeItem(STORAGE_KEY);
+            updatePreview();
+        }
+    }
+</script>
+
+</body>
+</html>
