@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BMA Melder-Scanner</title>
-    <!-- Zuverlässige Bibliothek für Barcodes & QR-Codes über CDN -->
-    <script src="https://unpkg.com"></script>
+    <title>Melder Scanner V01.01R000</title>
+    <!-- Wechsel auf ein alternatives, extrem stabiles CDN -->
+    <script src="https://cloudflare.com" integrity="sha512-r6rDA7W6ZeQhvl8S7YRhbH6ZNJFM5WrALFM5BIQDfsbOPCELQbRI3bL4vQdemi76kgNANYVp05vGhpnFSZgSbw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         :root {
             --primary: #007aff;
@@ -16,8 +16,9 @@
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); margin: 0; padding: 15px; color: #000; }
         .container { max-width: 500px; margin: 0 auto; }
         h1, h2 { text-align: center; color: #1c1c1e; margin-bottom: 10px; font-size: 22px; }
+        .version-tag { text-align: center; font-size: 12px; color: #8e8e93; margin-top: -8px; margin-bottom: 15px; font-weight: bold; }
         .card { background: var(--card); padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
-        #reader { width: 100%; border-radius: 8px; overflow: hidden; background: #000; }
+        #reader { width: 100%; border-radius: 8px; overflow: hidden; background: #000; min-height: 250px; }
         
         .result-box { text-align: center; font-size: 18px; font-weight: bold; color: var(--primary); padding: 10px; border: 2px dashed var(--primary); border-radius: 8px; margin: 10px 0; background: #f0f7ff; }
         
@@ -43,7 +44,8 @@
 <body>
 
 <div class="container">
-    <h1>BMA Melder-Scanner</h1>
+    <h1>Melder Scanner</h1>
+    <div class="version-tag">V01.01R000</div>
 
     <!-- 1. SCANNER CARD -->
     <div class="card">
@@ -99,45 +101,53 @@
     };
 
     function startScanner() {
+        // Kontrollstrukturen umschalten
         document.getElementById('btn-start-cam').classList.add('hidden');
         document.getElementById('reader').classList.remove('hidden');
         document.getElementById('btn-restart').style.display = 'none';
-        document.getElementById('scan-result').innerText = "Kamera wird gestartet...";
+        document.getElementById('scan-result').innerText = "Initialisiere Hardware...";
         
-        // Wir nutzen hier die Pro-Klasse "Html5Qrcode" für direkte, fehlerfreie iOS-Kontrolle
-        if (!html5QrCode) {
-            html5QrCode = new Html5Qrcode("reader");
-        }
-        
-        // iOS-optimierte Hardware-Konfiguration
-        const config = { 
-            fps: 10, 
-            qrbox: function(viewfinderWidth, viewfinderHeight) {
-                // Erstellt ein perfekt skaliertes, quadratisches Scanfenster für Mobilgeräte
-                const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                const size = Math.floor(minEdge * 0.7);
-                return { width: size, height: size };
+        try {
+            if (typeof Html5Qrcode === 'undefined') {
+                throw new Error("Scanner-Bibliothek konnte nicht geladen werden. Prüfen Sie Ihre Internetverbindung.");
             }
-        };
-        
-        // Startet explizit die Rückkamera ("environment") mit flexiblen Videoauflösungen
-        html5QrCode.start(
-            { facingMode: "environment" }, 
-            config,
-            onScanSuccess,
-            onScanFailure
-        ).then(() => {
-            document.getElementById('scan-result').innerText = "Kamera aktiv. Code scannen...";
-        }).catch(err => {
-            document.getElementById('scan-result').innerText = "Fehler: " + err;
+
+            if (!html5QrCode) {
+                html5QrCode = new Html5Qrcode("reader");
+            }
+            
+            const config = { 
+                fps: 10, 
+                qrbox: function(viewfinderWidth, viewfinderHeight) {
+                    const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                    const size = Math.floor(minEdge * 0.75);
+                    return { width: size, height: size };
+                }
+            };
+            
+            // Versuchen, die Umgebungskamera direkt anzusprechen
+            html5QrCode.start(
+                { facingMode: "environment" }, 
+                config,
+                onScanSuccess,
+                onScanFailure
+            ).then(() => {
+                document.getElementById('scan-result').innerText = "Kamera aktiv. Code scannen...";
+            }).catch(err => {
+                document.getElementById('scan-result').innerText = "Start-Fehler: " + err;
+                document.getElementById('btn-start-cam').classList.remove('hidden');
+                document.getElementById('reader').classList.add('hidden');
+            });
+
+        } catch (globalError) {
+            document.getElementById('scan-result').innerText = "Kritischer Fehler: " + globalError.message;
             document.getElementById('btn-start-cam').classList.remove('hidden');
-            console.error("Kamerastart fehlgeschlagen", err);
-        });
+            document.getElementById('reader').classList.add('hidden');
+        }
     }
 
     function onScanSuccess(decodedText, decodedResult) {
         let cleanText = decodedText.trim();
-        
         document.getElementById('scan-result').innerText = "Erfolgreich: " + cleanText;
         document.getElementById('melder-id').value = cleanText;
         
@@ -146,12 +156,11 @@
                 document.getElementById('btn-restart').style.display = 'block';
             }).catch(err => console.error("Fehler beim Stoppen", err));
         }
-        
         if (navigator.vibrate) navigator.vibrate(100);
     }
 
     function onScanFailure(error) {
-        // Stummschalten für bessere iOS-Performance
+        // Stumm für maximale Performance
     }
 
     function getStoredData() {
@@ -167,7 +176,6 @@
         }
 
         let currentData = getStoredData();
-
         let entry = {
             id: id,
             gruppennummer: document.getElementById('input-gruppe').value.trim(),
@@ -194,7 +202,6 @@
 
         updatePreview();
         alert("Daten erfolgreich lokal gesichert!");
-        
         startScanner();
     }
 
@@ -207,23 +214,3 @@
     function shareData() {
         let dataStr = localStorage.getItem(STORAGE_KEY);
         if (!dataStr || dataStr === "[]") {
-            alert("Keine Daten zum Übertragen vorhanden.");
-            return;
-        }
-
-        let blob = new Blob([dataStr], { type: "application/json" });
-        let file = new File([blob], "bma_export.json", { type: "application/json" });
-
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            navigator.share({
-                files: [file],
-                title: 'BMA Melder Export',
-                text: 'Hier sind die gescannten Melderdaten im JSON-Format.'
-            }).catch(err => console.log("Teilen abgebrochen", err));
-        } else {
-            let mailtoLink = "mailto:?subject=BMA%20Melder%20Export&body=" + encodeURIComponent(dataStr);
-            window.location.href = mailtoLink;
-        }
-    }
-
-    function clearLocalStorage() {
