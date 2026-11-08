@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMA Melder-Scanner</title>
+    <!-- Zuverlässige Bibliothek für Barcodes & QR-Codes über CDN -->
+    <script src="https://unpkg.com"></script>
+    <style>
+        :root {
+            --primary: #007aff;
+            --success: #34c759;
+            --bg: #f2f2f7;
+            --card: #ffffff;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); margin: 0; padding: 15px; color: #000; }
+        .container { max-width: 500px; margin: 0 auto; }
+        h1, h2 { text-align: center; color: #1c1c1e; margin-bottom: 10px; font-size: 22px; }
+        .card { background: var(--card); padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        #reader { width: 100%; border-radius: 8px; overflow: hidden; background: #000; }
+        
+        .result-box { text-align: center; font-size: 18px; font-weight: bold; color: var(--primary); padding: 10px; border: 2px dashed var(--primary); border-radius: 8px; margin: 10px 0; background: #f0f7ff; }
+        
+        .form-group { margin-bottom: 12px; }
+        label { display: block; font-size: 14px; font-weight: 600; color: #3a3a3c; margin-bottom: 4px; }
+        input, textarea { width: 100%; padding: 10px; border: 1px solid #c7c7cc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #fff; }
+        textarea { resize: vertical; height: 60px; font-family: inherit; }
+        input:focus, textarea:focus { border-color: var(--primary); outline: none; }
+        
+        button { width: 100%; padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s; margin-top: 5px; }
+        .btn-primary { background-color: var(--primary); color: white; }
+        .btn-primary:active { background-color: #0056b3; }
+        .btn-success { background-color: var(--success); color: white; }
+        .btn-success:active { background-color: #248a3d; }
+        .btn-secondary { background-color: #8e8e93; color: white; }
+        
+        .counter { text-align: center; font-size: 14px; color: #8e8e93; margin-top: 5px; }
+        .output-box { font-family: monospace; background: #e5e5ea; padding: 10px; border-radius: 8px; font-size: 11px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>BMA Melder-Scanner</h1>
+
+    <!-- 1. SCANNER CARD -->
+    <div class="card">
+        <div id="reader"></div>
+        <div id="scan-result" class="result-box">Warte auf Barcode / QR-Code...</div>
+        <button id="btn-restart" class="btn-secondary" style="display:none;" onclick="startScanner()">Neuen Scan starten</button>
+    </div>
+
+    <!-- 2. DATA ENTRY FORM (Wird befüllt nach Scan) -->
+    <div class="card" id="form-card">
+        <h2>Eingabefelder</h2>
+        <div class="form-group">
+            <label>Gescannte Nummer</label>
+            <input type="text" id="melder-id" readonly style="background-color: #e5e5ea; color: #555;">
+        </div>
+        <div class="form-group">
+            <label>Gruppennummer</label>
+            <input type="text" id="input-gruppe" placeholder="z.B. 12">
+        </div>
+        <div class="form-group">
+            <label>Meldernummer</label>
+            <input type="text" id="input-melder" placeholder="z.B. 4">
+        </div>
+        <div class="form-group">
+            <label>Zusatztext</label>
+            <input type="text" id="input-zusatz" placeholder="z.B. Flur OG">
+        </div>
+        <div class="form-group">
+            <label>Bemerkungen</label>
+            <textarea id="input-bemerkung" placeholder="z.B. Melder verschmutzt"></textarea>
+        </div>
+        <button class="btn-success" onclick="saveData()">Speichern</button>
+    </div>
+
+    <!-- 3. EXPORT / DATA MANAGEMENT -->
+    <div class="card">
+        <h2>Gespeicherte Daten (JSON)</h2>
+        <div class="counter" id="data-count">0 Melder gespeichert</div>
+        <div class="output-box" id="json-preview">[]</div>
+        <button class="btn-primary" style="margin-top: 10px;" onclick="shareData()">Daten übertragen / Mail</button>
+        <button class="btn-secondary" style="margin-top: 8px; background-color: #ff3b30;" onclick="clearLocalStorage()">Daten auf iPhone löschen</button>
+    </div>
+</div>
+
+<script>
+    let html5QrcodeScanner;
+    const STORAGE_KEY = "bma_scanned_detectors";
+
+    // Initialisierung beim Laden der Seite
+    window.onload = function() {
+        startScanner();
+        updatePreview();
+    };
+
+    function startScanner() {
+        document.getElementById('btn-restart').style.display = 'none';
+        
+        // Konfiguration passend für den Barcode/QR-Code auf dem Esser-Melder
+        html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
+            fps: 15, 
+            qrbox: { width: 250, height: 250 },
+            rememberLastUsedCamera: true,
+            supportedScanTypes: [
+                Html5QrcodeScanType.SCAN_TYPE_CAMERA
+            ]
+        }, false);
+        
+        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+    }
+
+    function onScanSuccess(decodedText, decodedResult) {
+        // Bereinige den Text von eventuellen Leerzeichen
+        let cleanText = decodedText.trim();
+        
+        // Nummer im UI anzeigen und in das Formular eintragen
+        document.getElementById('scan-result').innerText = "Erfolgreich: " + cleanText;
+        document.getElementById('melder-id').value = cleanText;
+        
+        // Scanner stoppen, um Kamera-Ressourcen zu schonen und Mehrfach-Scans zu verhindern
+        html5QrcodeScanner.clear().then(() => {
+            document.getElementById('btn-restart').style.display = 'block';
+        }).catch(err => console.error("Fehler beim Stoppen des Scanners", err));
+        
+        // Sanftes haptisches Feedback auf iPhones (sofern unterstützt)
+        if (navigator.vibrate) navigator.vibrate(100);
+    }
+
+    function onScanFailure(error) {
+        // Fehler-Logs unterdrücken, um Performance auf Mobilgeräten zu schonen
+    }
+
+    // Holt alle Daten aus dem lokalen Speicher des iPhones
+    function getStoredData() {
+        let data = localStorage.getItem(STORAGE_KEY);
+        return data ? JSON.parse(data) : [];
+    }
+
+    // Speichert den aktuellen Datensatz
+    function saveData() {
+        let id = document.getElementById('melder-id').value;
+        if (!id) {
+            alert("Bitte scannen Sie zuerst einen Melder-Code!");
+            return;
+        }
+
+        let currentData = getStoredData();
+
+        // Datensatz bauen
+        let entry = {
+            id: id,
+            gruppennummer: document.getElementById('input-gruppe').value.trim(),
+            meldernummer: document.getElementById('input-melder').value.trim(),
+            zusatztext: document.getElementById('input-zusatz').value.trim(),
+            bemerkungen: document.getElementById('input-bemerkung').value.trim(),
+            zeitstempel: new Date().toISOString()
+        };
+
+        // Prüfen, ob ID bereits existiert -> Falls ja, überschreiben, ansonsten anfügen
+        let existingIndex = currentData.findIndex(item => item.id === id);
+        if (existingIndex > -1) {
+            currentData[existingIndex] = entry;
+        } else {
+            currentData.push(entry);
+        }
+
+        // Zurück ins LocalStorage schreiben
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(currentData));
+
+        // Formular-Felder zurücksetzen (außer Gruppe, falls man mehrere Melder in einer Gruppe scannt)
+        document.getElementById('melder-id').value = "";
+        document.getElementById('input-melder').value = "";
+        document.getElementById('input-zusatz').value = "";
+        document.getElementById('input-bemerkung').value = "";
+        document.getElementById('scan-result').innerText = "Warte auf Barcode / QR-Code...";
+
+        updatePreview();
+        alert("Daten erfolgreich lokal gesichert!");
+        
+        // Scanner direkt für den nächsten Melder neu starten
+        startScanner();
+    }
+
+    // UI-Anzeige aktualisieren
+    function updatePreview() {
+        let data = getStoredData();
+        document.getElementById('data-count').innerText = data.length + " Melder gespeichert";
+        document.getElementById('json-preview').innerText = JSON.stringify(data, null, 2);
+    }
+
+    // Apple-natives Teilen (Mail, AirDrop, Bluetooth-Kompatibilität über iOS Share Sheet)
+    function shareData() {
+        let dataStr = localStorage.getItem(STORAGE_KEY);
+        if (!dataStr || dataStr === "[]") {
+            alert("Keine Daten zum Übertragen vorhanden.");
+            return;
+        }
+
+        // Wir erstellen eine virtuelle Datei im iPhone-Speicher
+        let blob = new Blob([dataStr], { type: "application/json" });
+        let file = new File([blob], "bma_export.json", { type: "application/json" });
+
+        // Nutzt das native iPhone Share-Menü (erlaubt AirDrop, Mail, Messenger, Datei-Speichern)
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            navigator.share({
+                files: [file],
+                title: 'BMA Melder Export',
+                text: 'Hier sind die gescannten Melderdaten im JSON-Format.'
+            }).catch(err => console.log("Teilen abgebrochen", err));
+        } else {
+            // Fallback für Browser, die das File-Sharing im Web nicht unterstützen: Öffnet E-Mail Client
+            let mailtoLink = "mailto:?subject=BMA%20Melder%20Export&body=" + encodeURIComponent(dataStr);
+            window.location.href = mailtoLink;
+        }
+    }
+
+    function clearLocalStorage() {
+        if (confirm("Möchten Sie wirklich ALLE gespeicherten Melderdaten von diesem iPhone löschen?")) {
+            localStorage.removeItem(STORAGE_KEY);
