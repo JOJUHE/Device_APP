@@ -27,7 +27,7 @@
         textarea { resize: vertical; height: 60px; font-family: inherit; }
         input:focus, textarea:focus { border-color: var(--primary); outline: none; }
         
-        button { width: 100%; padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s; margin-top: 5px; }
+        button { width: 100%; padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s; margin-top: 5px; box-sizing: border-box; }
         .btn-primary { background-color: var(--primary); color: white; }
         .btn-primary:active { background-color: #0056b3; }
         .btn-success { background-color: var(--success); color: white; }
@@ -36,6 +36,9 @@
         
         .counter { text-align: center; font-size: 14px; color: #8e8e93; margin-top: 5px; }
         .output-box { font-family: monospace; background: #e5e5ea; padding: 10px; border-radius: 8px; font-size: 11px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
+        
+        /* Hilfsklasse zum Verbergen */
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
@@ -45,12 +48,16 @@
 
     <!-- 1. SCANNER CARD -->
     <div class="card">
-        <div id="reader"></div>
-        <div id="scan-result" class="result-box">Warte auf Barcode / QR-Code...</div>
+        <!-- Manueller Start-Button für das iPhone -->
+        <button id="btn-start-cam" class="btn-primary" onclick="startScanner()">Kamera aktivieren</button>
+        
+        <!-- Das Kamerafenster ist initial unsichtbar -->
+        <div id="reader" class="hidden"></div>
+        <div id="scan-result" class="result-box">Bitte Kamera aktivieren...</div>
         <button id="btn-restart" class="btn-secondary" style="display:none;" onclick="startScanner()">Neuen Scan starten</button>
     </div>
 
-    <!-- 2. DATA ENTRY FORM (Wird befüllt nach Scan) -->
+    <!-- 2. DATA ENTRY FORM -->
     <div class="card" id="form-card">
         <h2>Eingabefelder</h2>
         <div class="form-group">
@@ -90,16 +97,19 @@
     let html5QrcodeScanner;
     const STORAGE_KEY = "bma_scanned_detectors";
 
-    // Initialisierung beim Laden der Seite
+    // Beim Laden nur die bestehende UI-Vorschau laden
     window.onload = function() {
-        startScanner();
         updatePreview();
     };
 
     function startScanner() {
+        // UI umschalten: Button weg, Kamera-Box herzeigen
+        document.getElementById('btn-start-cam').classList.add('hidden');
+        document.getElementById('reader').classList.remove('hidden');
         document.getElementById('btn-restart').style.display = 'none';
+        document.getElementById('scan-result').innerText = "Kamera wird gestartet...";
         
-        // Konfiguration passend für den Barcode/QR-Code auf dem Esser-Melder
+        // Scanner initialisieren
         html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
             fps: 15, 
             qrbox: { width: 250, height: 250 },
@@ -113,33 +123,27 @@
     }
 
     function onScanSuccess(decodedText, decodedResult) {
-        // Bereinige den Text von eventuellen Leerzeichen
         let cleanText = decodedText.trim();
         
-        // Nummer im UI anzeigen und in das Formular eintragen
         document.getElementById('scan-result').innerText = "Erfolgreich: " + cleanText;
         document.getElementById('melder-id').value = cleanText;
         
-        // Scanner stoppen, um Kamera-Ressourcen zu schonen und Mehrfach-Scans zu verhindern
         html5QrcodeScanner.clear().then(() => {
             document.getElementById('btn-restart').style.display = 'block';
         }).catch(err => console.error("Fehler beim Stoppen des Scanners", err));
         
-        // Sanftes haptisches Feedback auf iPhones (sofern unterstützt)
         if (navigator.vibrate) navigator.vibrate(100);
     }
 
     function onScanFailure(error) {
-        // Fehler-Logs unterdrücken, um Performance auf Mobilgeräten zu schonen
+        // Ignorieren für bessere Performance
     }
 
-    // Holt alle Daten aus dem lokalen Speicher des iPhones
     function getStoredData() {
         let data = localStorage.getItem(STORAGE_KEY);
         return data ? JSON.parse(data) : [];
     }
 
-    // Speichert den aktuellen Datensatz
     function saveData() {
         let id = document.getElementById('melder-id').value;
         if (!id) {
@@ -149,7 +153,6 @@
 
         let currentData = getStoredData();
 
-        // Datensatz bauen
         let entry = {
             id: id,
             gruppennummer: document.getElementById('input-gruppe').value.trim(),
@@ -159,7 +162,6 @@
             zeitstempel: new Date().toISOString()
         };
 
-        // Prüfen, ob ID bereits existiert -> Falls ja, überschreiben, ansonsten anfügen
         let existingIndex = currentData.findIndex(item => item.id === id);
         if (existingIndex > -1) {
             currentData[existingIndex] = entry;
@@ -167,10 +169,8 @@
             currentData.push(entry);
         }
 
-        // Zurück ins LocalStorage schreiben
         localStorage.setItem(STORAGE_KEY, JSON.stringify(currentData));
 
-        // Formular-Felder zurücksetzen (außer Gruppe, falls man mehrere Melder in einer Gruppe scannt)
         document.getElementById('melder-id').value = "";
         document.getElementById('input-melder').value = "";
         document.getElementById('input-zusatz').value = "";
@@ -180,18 +180,15 @@
         updatePreview();
         alert("Daten erfolgreich lokal gesichert!");
         
-        // Scanner direkt für den nächsten Melder neu starten
         startScanner();
     }
 
-    // UI-Anzeige aktualisieren
     function updatePreview() {
         let data = getStoredData();
         document.getElementById('data-count').innerText = data.length + " Melder gespeichert";
         document.getElementById('json-preview').innerText = JSON.stringify(data, null, 2);
     }
 
-    // Apple-natives Teilen (Mail, AirDrop, Bluetooth-Kompatibilität über iOS Share Sheet)
     function shareData() {
         let dataStr = localStorage.getItem(STORAGE_KEY);
         if (!dataStr || dataStr === "[]") {
@@ -199,11 +196,9 @@
             return;
         }
 
-        // Wir erstellen eine virtuelle Datei im iPhone-Speicher
         let blob = new Blob([dataStr], { type: "application/json" });
         let file = new File([blob], "bma_export.json", { type: "application/json" });
 
-        // Nutzt das native iPhone Share-Menü (erlaubt AirDrop, Mail, Messenger, Datei-Speichern)
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
             navigator.share({
                 files: [file],
@@ -211,7 +206,6 @@
                 text: 'Hier sind die gescannten Melderdaten im JSON-Format.'
             }).catch(err => console.log("Teilen abgebrochen", err));
         } else {
-            // Fallback für Browser, die das File-Sharing im Web nicht unterstützen: Öffnet E-Mail Client
             let mailtoLink = "mailto:?subject=BMA%20Melder%20Export&body=" + encodeURIComponent(dataStr);
             window.location.href = mailtoLink;
         }
@@ -220,3 +214,10 @@
     function clearLocalStorage() {
         if (confirm("Möchten Sie wirklich ALLE gespeicherten Melderdaten von diesem iPhone löschen?")) {
             localStorage.removeItem(STORAGE_KEY);
+            updatePreview();
+        }
+    }
+</script>
+
+</body>
+</html>
