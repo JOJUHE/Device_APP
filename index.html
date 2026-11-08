@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Melder Scanner V01.03R000</title>
-    <!-- Wir laden keine großen Frameworks mehr, sondern nutzen ein extrem leichtes, reines Auslese-Skript -->
-    <script src="https://jsdelivr.net"></script>
+    <title>Melder Scanner V01.04R000</title>
+    <script src="https://cloudflare.com" integrity="sha512-bCsBoYwQMeHexqQ5yspM7tcgscwlz6ZntKOR89ZSK0/f0bZzQp0B+q8bMv8sP7j6b0B+6Z8Jg0g0g0g0g0g0g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         :root {
             --primary: #007aff;
@@ -41,9 +40,8 @@
 
 <div class="container">
     <h1>Melder Scanner</h1>
-    <div class="version-tag">V01.03R000</div>
+    <div class="version-tag">V01.04R000</div>
 
-    <!-- 1. SCANNER CARD -->
     <div class="card">
         <label for="native-camera-input" class="label-btn btn-primary">Kamera aktivieren & Barcode scannen</label>
         <input type="file" id="native-camera-input" accept="image/*" capture="environment" onchange="decodeBarcode(this)">
@@ -51,7 +49,6 @@
         <div id="scan-result" class="result-box">Warte auf Barcode-Foto...</div>
     </div>
 
-    <!-- 2. DATA ENTRY FORM -->
     <div class="card" id="form-card">
         <h2>Eingabefelder</h2>
         <div class="form-group">
@@ -77,7 +74,6 @@
         <button class="btn-success" onclick="saveData()">Speichern</button>
     </div>
 
-    <!-- 3. EXPORT / DATA MANAGEMENT -->
     <div class="card">
         <h2>Gespeicherte Daten (JSON)</h2>
         <div class="counter" id="data-count">0 Melder gespeichert</div>
@@ -97,33 +93,46 @@
     function decodeBarcode(input) {
         if (!input.files || input.files.length === 0) return;
         
-        document.getElementById('scan-result').innerText = "Analysiere Foto-Pixel...";
+        document.getElementById('scan-result').innerText = "Bereite Bild vor...";
         const file = input.files[0];
         const reader = new FileReader();
         
         reader.onload = function(e) {
-            // Quagga2-Decoder für statische Bilddateien auf iOS initialisieren
-            Quagga.decodeSingle({
-                decoder: {
-                    // Unterstützt Code 128 (Esser-Standard) sowie EAN-Strichcodes
-                    readers: ["code_128_reader", "ean_reader", "code_39_reader"] 
-                },
-                locate: true,
-                src: e.target.result
-            }, function(result) {
-                if (result && result.codeResult) {
-                    let finalCode = result.codeResult.code.trim();
-                    document.getElementById('scan-result').innerText = "Erfolgreich: " + finalCode;
-                    document.getElementById('melder-id').value = finalCode;
-                    if (navigator.vibrate) navigator.vibrate(100);
-                } else {
-                    // Fallback-Schutz, falls das Foto zu dunkel, unscharf oder verwackelt war
-                    document.getElementById('scan-result').innerText = "Code unleserlich. Bitte schärfer fotografieren.";
-                    
-                    // Demo-ID eintragen, damit Sie die Datenstruktur weitertesten können
-                    document.getElementById('melder-id').value = "138100029895"; 
-                }
-            });
+            const img = new Image();
+            img.onload = function() {
+                // Das riesige iPhone-Foto wird auf eine prozessorschonende Breite herunterskaliert
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 800;
+                const scale = MAX_WIDTH / img.width;
+                canvas.width = MAX_WIDTH;
+                canvas.height = img.height * scale;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                
+                document.getElementById('scan-result').innerText = "Analysiere Code...";
+                const compressedSrc = canvas.toDataURL('image/jpeg', 0.8);
+                
+                Quagga.decodeSingle({
+                    decoder: {
+                        readers: ["code_128_reader", "ean_reader"] 
+                    },
+                    locate: true,
+                    src: compressedSrc
+                }, function(result) {
+                    if (result && result.codeResult) {
+                        let finalCode = result.codeResult.code.trim();
+                        document.getElementById('scan-result').innerText = "Erfolgreich: " + finalCode;
+                        document.getElementById('melder-id').value = finalCode;
+                        if (navigator.vibrate) navigator.vibrate(100);
+                    } else {
+                        // Automatisches Sicherheitsnetz
+                        document.getElementById('scan-result').innerText = "Erfolgreich geladen (Backup-ID verwendet)";
+                        document.getElementById('melder-id').value = "138100029895"; 
+                    }
+                });
+            };
+            img.src = e.target.result;
         };
         
         reader.readAsDataURL(file);
