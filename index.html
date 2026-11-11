@@ -1,165 +1,547 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
+    <!-- BMA Melder-Scanner - SCRIPT_VERSION 01.07R000 - AI_CREDITS_USED: 55 -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Melder Scanner V01.06R000</title>
+    <meta name="version" content="01.07R000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Melder-Scanner">
+    <title>BMA Melder-Scanner</title>
+    <!-- html5-qrcode 2.3.8 (Apache-2.0, https://github.com/mebjas/html5-qrcode), lokal mitgeliefert -->
+    <script src="html5-qrcode.min.js"></script>
     <style>
         :root {
             --primary: #007aff;
             --success: #34c759;
+            --warning: #ff9500;
+            --danger: #ff3b30;
             --bg: #f2f2f7;
             --card: #ffffff;
         }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); margin: 0; padding: 15px; color: #000; }
         .container { max-width: 500px; margin: 0 auto; }
-        h1 { text-align: center; color: #1c1c1e; margin-bottom: 10px; font-size: 22px; }
+        h1, h2 { text-align: center; color: #1c1c1e; margin-bottom: 10px; font-size: 22px; }
         .version-tag { text-align: center; font-size: 12px; color: #8e8e93; margin-top: -8px; margin-bottom: 15px; font-weight: bold; }
         .card { background: var(--card); padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
-        
-        .hint-box { text-align: center; font-size: 14px; color: var(--primary); padding: 12px; border: 1px dashed var(--primary); border-radius: 8px; margin-bottom: 15px; background: #f0f7ff; line-height: 1.4; }
-        
+        #reader { width: 100%; border-radius: 8px; overflow: hidden; background: #000; margin-top: 8px; }
+
+        .result-box { text-align: center; font-size: 18px; font-weight: bold; color: var(--primary); padding: 10px; border: 2px dashed var(--primary); border-radius: 8px; margin: 10px 0; background: #f0f7ff; }
+        .result-box.ok { color: #248a3d; border-color: var(--success); background: #effaf2; }
+        .result-box.warn { color: #b25f00; border-color: var(--warning); background: #fff6eb; }
+
         .form-group { margin-bottom: 12px; }
+        .row { display: flex; gap: 10px; }
+        .row .form-group { flex: 1; }
         label { display: block; font-size: 14px; font-weight: 600; color: #3a3a3c; margin-bottom: 4px; }
         input, textarea { width: 100%; padding: 10px; border: 1px solid #c7c7cc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #fff; }
         textarea { resize: vertical; height: 60px; font-family: inherit; }
         input:focus, textarea:focus { border-color: var(--primary); outline: none; }
-        
-        button { display: block; width: 100%; padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; text-align: center; box-sizing: border-box; transition: background 0.2s; margin-top: 5px; }
+        .hint { font-size: 13px; margin-top: 4px; color: #8e8e93; }
+        .hint.ok { color: #248a3d; }
+        .hint.warn { color: #b25f00; }
+
+        button { width: 100%; padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s; margin-top: 5px; box-sizing: border-box; }
         .btn-primary { background-color: var(--primary); color: white; }
+        .btn-primary:active { background-color: #0056b3; }
         .btn-success { background-color: var(--success); color: white; }
+        .btn-success:active { background-color: #248a3d; }
         .btn-secondary { background-color: #8e8e93; color: white; }
-        
+        .btn-danger { background-color: var(--danger); color: white; }
+
         .counter { text-align: center; font-size: 14px; color: #8e8e93; margin-top: 5px; }
-        .output-box { font-family: monospace; background: #e5e5ea; padding: 10px; border-radius: 8px; font-size: 11px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
+        .list { list-style: none; padding: 0; margin: 10px 0 0 0; }
+        .list li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #e5e5ea; font-size: 14px; }
+        .list li .entry { flex: 1; cursor: pointer; }
+        .list li .entry small { color: #8e8e93; }
+        .list li button { width: auto; margin: 0; padding: 6px 10px; font-size: 14px; }
+        details { margin-top: 10px; }
+        summary { cursor: pointer; font-size: 14px; color: #3a3a3c; }
+        .output-box { font-family: monospace; background: #e5e5ea; padding: 10px; border-radius: 8px; font-size: 11px; max-height: 160px; overflow-y: auto; white-space: pre-wrap; margin-top: 8px; }
+        footer { text-align: center; font-size: 12px; color: #8e8e93; margin-top: 10px; }
+
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>Melder Scanner</h1>
-    <div class="version-tag">V01.06R000</div>
+    <h1>BMA Melder-Scanner</h1>
+    <div class="version-tag" id="version-tag"></div>
 
-    <div class="hint-box">
-        <strong>💡 iPhone-Tipp für schnellen Scan:</strong><br>
-        Tippen Sie in das Feld „Gescannte Nummer“. Wählen Sie über der Tastatur das <strong>Kamera-Symbol</strong> (oder halten Sie das Feld gedrückt und wählen Sie <em>„Text von Kamera“</em>), um die Nummer direkt vom Melder einzuscannen!
-    </div>
-
-    <!-- DATA ENTRY FORM -->
-    <div class="card" id="form-card">
-        <h2>Eingabefelder</h2>
-        <div class="form-group">
-            <label>Gescannte Nummer</label>
-            <!-- Eingabefeld geöffnet für das native iOS Live-Text Feature -->
-            <input type="text" id="melder-id" placeholder="Hier tippen -> Kamera-Symbol wählen">
-        </div>
-        <div class="form-group">
-            <label>Gruppennummer</label>
-            <input type="text" id="input-gruppe" placeholder="z.B. 12">
-        </div>
-        <div class="form-group">
-            <label>Meldernummer</label>
-            <input type="text" id="input-melder" placeholder="z.B. 4">
-        </div>
-        <div class="form-group">
-            <label>Zusatztext</label>
-            <input type="text" id="input-zusatz" placeholder="z.B. Flur OG">
-        </div>
-        <div class="form-group">
-            <label>Bemerkungen</label>
-            <textarea id="input-bemerkung" placeholder="z.B. Melder verschmutzt"></textarea>
-        </div>
-        <button class="btn-success" onclick="saveData()">Speichern</button>
-    </div>
-
-    <!-- EXPORT / DATA MANAGEMENT -->
+    <!-- 1. SCANNER -->
     <div class="card">
-        <h2>Gespeicherte Daten (JSON)</h2>
-        <div class="counter" id="data-count">0 Melder gespeichert</div>
-        <div class="output-box" id="json-preview">[]</div>
-        <button class="btn-primary" style="margin-top: 10px;" onclick="shareData()">Daten übertragen / Mail</button>
-        <button class="btn-secondary" style="margin-top: 8px; background-color: #ff3b30;" onclick="clearLocalStorage()">Daten auf iPhone löschen</button>
+        <button id="btn-start-cam" class="btn-primary" onclick="startScanner()"
+                data-de="Kamera aktivieren" data-en="Activate camera">Kamera aktivieren</button>
+        <div id="reader" class="hidden"></div>
+        <button id="btn-stop-cam" class="btn-secondary hidden" onclick="stopScanner()"
+                data-de="Scan abbrechen" data-en="Cancel scan">Scan abbrechen</button>
+        <div id="scan-result" class="result-box" data-de="Bitte Kamera aktivieren oder Nummer eintippen"
+             data-en="Activate the camera or type the number">Bitte Kamera aktivieren oder Nummer eintippen</div>
     </div>
+
+    <!-- 2. EINGABE -->
+    <div class="card" id="form-card">
+        <h2 data-de="Eingabefelder" data-en="Input fields">Eingabefelder</h2>
+        <div class="form-group">
+            <label for="melder-id" data-de="Etikettennummer (gescannt oder eingetippt)"
+                   data-en="Label number (scanned or typed)">Etikettennummer (gescannt oder eingetippt)</label>
+            <input type="text" id="melder-id" inputmode="numeric" autocomplete="off" oninput="showAnalysis()"
+                   data-ph-de="z.B. 145108098563" data-ph-en="e.g. 145108098563" placeholder="z.B. 145108098563">
+            <div id="id-hint" class="hint"></div>
+            <div class="hint" data-de="Barcode nicht lesbar? Ins Feld tippen, Feld gedrückt halten und &quot;Text von Kamera&quot; wählen (iPhone Live Text)."
+                 data-en="Bar code not readable? Tap the field, hold it and choose &quot;Scan Text&quot; (iPhone Live Text).">Barcode nicht lesbar? Ins Feld tippen, Feld gedrückt halten und "Text von Kamera" wählen (iPhone Live Text).</div>
+        </div>
+        <div class="row">
+            <div class="form-group">
+                <label for="input-gruppe" data-de="Gruppennummer" data-en="Zone number">Gruppennummer</label>
+                <input type="text" id="input-gruppe" inputmode="numeric" pattern="[0-9]*"
+                       data-ph-de="z.B. 12" data-ph-en="e.g. 12" placeholder="z.B. 12">
+            </div>
+            <div class="form-group">
+                <label for="input-melder" data-de="Meldernummer" data-en="Device number">Meldernummer</label>
+                <input type="text" id="input-melder" inputmode="numeric" pattern="[0-9]*"
+                       data-ph-de="z.B. 4" data-ph-en="e.g. 4" placeholder="z.B. 4">
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="input-zusatz" data-de="Zusatztext" data-en="Additional text">Zusatztext</label>
+            <input type="text" id="input-zusatz" data-ph-de="z.B. Flur OG" data-ph-en="e.g. corridor 1st floor"
+                   placeholder="z.B. Flur OG">
+        </div>
+        <div class="form-group">
+            <label for="input-bemerkung" data-de="Bemerkungen" data-en="Remarks">Bemerkungen</label>
+            <textarea id="input-bemerkung" data-ph-de="z.B. Melder verschmutzt" data-ph-en="e.g. detector dirty"
+                      placeholder="z.B. Melder verschmutzt"></textarea>
+        </div>
+        <button class="btn-success" onclick="saveData()" data-de="Speichern" data-en="Save">Speichern</button>
+    </div>
+
+    <!-- 3. GESPEICHERTE DATEN -->
+    <div class="card">
+        <h2 data-de="Gespeicherte Melder" data-en="Saved devices">Gespeicherte Melder</h2>
+        <div class="counter" id="data-count"></div>
+        <ul class="list" id="entry-list"></ul>
+        <details>
+            <summary data-de="Datei-Inhalt (JSON) anzeigen" data-en="Show file content (JSON)">Datei-Inhalt (JSON) anzeigen</summary>
+            <div class="output-box" id="json-preview"></div>
+        </details>
+        <button class="btn-primary" style="margin-top: 10px;" onclick="shareData()"
+                data-de="Daten übertragen / Mail" data-en="Send data / mail">Daten übertragen / Mail</button>
+        <button class="btn-danger" style="margin-top: 8px;" onclick="clearLocalStorage()"
+                data-de="Alle Daten auf diesem Gerät löschen" data-en="Delete all data on this device">Alle Daten auf diesem Gerät löschen</button>
+    </div>
+    <footer id="footer"></footer>
 </div>
 
 <script>
+    const SCRIPT_VERSION = "01.07R000";
     const STORAGE_KEY = "bma_scanned_detectors";
+    const FILE_FORMAT = "bma-melder-scanner";
+    const GERMAN = (navigator.language || "de").toLowerCase().startsWith("de");
+
+    let scanner = null;
+    let scanning = false;
+    let taking = false;
+    let scanAgain = false;
+    let lastRead = "";
+    let lastReadCount = 0;
+
+    function tr(de, en) {
+        return GERMAN ? de : en;
+    }
+
+    function format(text, ...values) {
+        values.forEach(value => { text = text.replace("%s", value); });
+        return text;
+    }
+
+    function applyLanguage() {
+        document.documentElement.lang = GERMAN ? "de" : "en";
+        document.querySelectorAll("[data-de]").forEach(el => { el.innerText = tr(el.dataset.de, el.dataset.en); });
+        document.querySelectorAll("[data-ph-de]").forEach(el => { el.placeholder = tr(el.dataset.phDe, el.dataset.phEn); });
+        document.getElementById("version-tag").innerText = "V" + SCRIPT_VERSION;
+        document.title = "BMA Melder-Scanner V" + SCRIPT_VERSION;
+        document.getElementById("footer").innerText = format(
+            tr("Version %s - Daten bleiben auf diesem Gerät, bis sie übertragen werden",
+               "Version %s - data stays on this device until it is sent"), SCRIPT_VERSION);
+    }
 
     window.onload = function() {
+        applyLanguage();
         updatePreview();
+        if (!window.isSecureContext) {
+            setStatus(tr("Kamera nur über HTTPS möglich - Nummer bitte eintippen",
+                         "Camera needs HTTPS - please type the number"), "warn");
+        }
     };
 
+    function setStatus(text, kind) {
+        const box = document.getElementById("scan-result");
+        box.innerText = text;
+        box.className = "result-box" + (kind ? " " + kind : "");
+    }
+
+    // Check digit of the device label as in efi_loop.check_digit: weights 3 and 1 from the right (EAN).
+    function checkDigit(digits) {
+        let total = 0;
+        digits.split("").reverse().forEach((digit, index) => { total += Number(digit) * (index % 2 === 0 ? 3 : 1); });
+        return String((10 - total % 10) % 10);
+    }
+
+    // Detector label = tools 8000 serial number (9 or 11 digits) + check digit;
+    // base label (IQ8Wireless) = tools 8000 number without check digit, type 06 radio base / 12 radio interface.
+    function analyse(raw) {
+        const text = raw.replace(/\s+/g, "");
+        if (!text) {
+            return { ok: false, art: "", tools8000: "", note: "" };
+        }
+        if (!/^\d+$/.test(text)) {
+            return { ok: false, art: "unbekannt", tools8000: "",
+                     note: tr("Keine reine Ziffernfolge - bitte prüfen", "Not digits only - please check") };
+        }
+        if (text.length === 10 || text.length === 12) {
+            const expected = checkDigit(text.slice(0, -1));
+            if (expected === text.slice(-1)) {
+                return { ok: true, art: "melder", tools8000: text.slice(0, -1),
+                         note: format(tr("Melder-Etikett, Prüfziffer richtig (tools 8000: %s)",
+                                         "Device label, check digit correct (tools 8000: %s)"), text.slice(0, -1)) };
+            }
+            return { ok: false, art: "unbekannt", tools8000: "",
+                     note: format(tr("Prüfziffer falsch (erwartet %s) - bitte prüfen",
+                                     "Check digit wrong (expected %s) - please check"), expected) };
+        }
+        if (text.length === 9 || text.length === 11) {
+            const type = text.length === 9 ? text.slice(0, 2) : text.slice(1, 3);
+            const name = type === "06" ? tr("Funksockel", "radio base")
+                       : type === "12" ? tr("Funk-Interface", "radio interface")
+                       : tr("Sockel", "base");
+            return { ok: true, art: "sockel", tools8000: text,
+                     note: format(tr("Etikett ohne Prüfziffer: %s", "Label without check digit: %s"), name) };
+        }
+        return { ok: false, art: "unbekannt", tools8000: "",
+                 note: format(tr("%s Stellen - erwartet 10 oder 12 (Melder) bzw. 9 oder 11 (Sockel)",
+                                 "%s digits - expected 10 or 12 (device) or 9 or 11 (base)"), text.length) };
+    }
+
+    function showAnalysis() {
+        const result = analyse(document.getElementById("melder-id").value);
+        const hint = document.getElementById("id-hint");
+        hint.innerText = result.note;
+        hint.className = "hint" + (result.note ? (result.ok ? " ok" : " warn") : "");
+        return result;
+    }
+
+    function supportedFormats() {
+        const f = Html5QrcodeSupportedFormats;
+        return [f.CODE_128, f.CODE_39, f.CODE_93, f.ITF, f.EAN_13, f.EAN_8, f.UPC_A, f.CODABAR,
+                f.QR_CODE, f.DATA_MATRIX];
+    }
+
+    // Wide frame: the label bar codes are one-dimensional.
+    function scanBox(width, height) {
+        return { width: Math.max(50, Math.floor(width * 0.9)),
+                 height: Math.max(50, Math.floor(Math.min(height * 0.6, width * 0.5))) };
+    }
+
+    async function startScanner() {
+        if (scanning) {
+            return;
+        }
+        if (!window.isSecureContext) {
+            setStatus(tr("Kamera nur über HTTPS möglich - Nummer bitte eintippen",
+                         "Camera needs HTTPS - please type the number"), "warn");
+            return;
+        }
+        if (typeof Html5Qrcode === "undefined") {
+            setStatus(tr("Scan-Bibliothek nicht geladen - Nummer bitte eintippen",
+                         "Scan library not loaded - please type the number"), "warn");
+            return;
+        }
+        document.getElementById("btn-start-cam").classList.add("hidden");
+        document.getElementById("reader").classList.remove("hidden");
+        document.getElementById("btn-stop-cam").classList.remove("hidden");
+        setStatus(tr("Kamera wird gestartet ...", "Starting camera ..."));
+        if (!scanner) {
+            scanner = new Html5Qrcode("reader", {
+                formatsToSupport: supportedFormats(),
+                verbose: false,
+                experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+            });
+        }
+        lastRead = "";
+        lastReadCount = 0;
+        taking = false;
+        try {
+            await scanner.start({ facingMode: "environment" }, {
+                fps: 10,
+                qrbox: scanBox,
+                videoConstraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
+            }, onScanSuccess, () => {});
+            scanning = true;
+            scanAgain = true;
+            setStatus(tr("Barcode quer in den Rahmen halten ...", "Hold the bar code across the frame ..."));
+        } catch (err) {
+            resetScannerView();
+            setStatus(format(tr("Kamera nicht verfügbar (%s) - Nummer bitte eintippen",
+                                "Camera not available (%s) - please type the number"), err), "warn");
+        }
+    }
+
+    function resetScannerView() {
+        document.getElementById("reader").classList.add("hidden");
+        document.getElementById("btn-stop-cam").classList.add("hidden");
+        document.getElementById("btn-start-cam").classList.remove("hidden");
+    }
+
+    async function stopScanner(byUser = true) {
+        if (scanner && scanning) {
+            try {
+                await scanner.stop();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+        scanning = false;
+        if (byUser) {
+            scanAgain = false;
+            setStatus(tr("Scan abgebrochen", "Scan cancelled"));
+        }
+        resetScannerView();
+    }
+
+    // A label with a correct check digit is taken at once, anything else only after two equal reads in a row.
+    function onScanSuccess(decodedText) {
+        if (taking) {
+            return;
+        }
+        const value = decodedText.trim();
+        const result = analyse(value);
+        if (!result.ok) {
+            lastReadCount = value === lastRead ? lastReadCount + 1 : 1;
+            lastRead = value;
+            if (lastReadCount < 2) {
+                return;
+            }
+        }
+        taking = true;
+        stopScanner(false).then(() => takeNumber(value));
+    }
+
+    function takeNumber(value) {
+        document.getElementById("melder-id").value = value;
+        const result = showAnalysis();
+        const existing = getStoredData().find(item => item.etikett === value.replace(/\s+/g, ""));
+        if (existing) {
+            loadEntry(existing);
+            setStatus(format(tr("%s schon erfasst - Speichern überschreibt",
+                                "%s already saved - saving overwrites it"), value), "warn");
+        } else {
+            setStatus(format(tr("Erkannt: %s", "Read: %s"), value), result.ok ? "ok" : "warn");
+        }
+        if (navigator.vibrate) {
+            navigator.vibrate(100);
+        }
+        document.getElementById("input-gruppe").focus();
+    }
+
+    function migrateEntry(item) {
+        if (item.etikett !== undefined) {
+            return item;
+        }
+        // Entries of the first draft (id, gruppennummer, meldernummer, bemerkungen)
+        const etikett = String(item.id || "").replace(/\s+/g, "");
+        const result = analyse(etikett);
+        return { etikett: etikett, art: result.art, tools8000: result.tools8000, pruefziffer_ok: result.ok,
+                 gruppe: item.gruppennummer || "", melder: item.meldernummer || "",
+                 zusatztext: item.zusatztext || "", bemerkung: item.bemerkungen || "",
+                 zeitstempel: item.zeitstempel || "" };
+    }
+
     function getStoredData() {
-        let data = localStorage.getItem(STORAGE_KEY);
-        return data ? JSON.parse(data) : [];
+        try {
+            const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+            return Array.isArray(data) ? data.map(migrateEntry) : [];
+        } catch (err) {
+            return [];
+        }
+    }
+
+    function storeData(data) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function loadEntry(entry) {
+        document.getElementById("melder-id").value = entry.etikett;
+        document.getElementById("input-gruppe").value = entry.gruppe;
+        document.getElementById("input-melder").value = entry.melder;
+        document.getElementById("input-zusatz").value = entry.zusatztext;
+        document.getElementById("input-bemerkung").value = entry.bemerkung;
+        showAnalysis();
     }
 
     function saveData() {
-        let id = document.getElementById('melder-id').value.trim();
-        if (!id) {
-            alert("Bitte tragen Sie zuerst eine Melder-Nummer ein!");
+        const etikett = document.getElementById("melder-id").value.replace(/\s+/g, "");
+        const gruppe = document.getElementById("input-gruppe").value.trim();
+        const melder = document.getElementById("input-melder").value.trim();
+        if (!etikett) {
+            alert(tr("Bitte zuerst einen Melder scannen oder die Nummer eintippen!",
+                     "Please scan a device or type its number first!"));
             return;
         }
-
-        let currentData = getStoredData();
-        let entry = {
-            id: id,
-            gruppennummer: document.getElementById('input-gruppe').value.trim(),
-            meldernummer: document.getElementById('input-melder').value.trim(),
-            zusatztext: document.getElementById('input-zusatz').value.trim(),
-            bemerkungen: document.getElementById('input-bemerkung').value.trim(),
+        if (!/^\d*$/.test(gruppe) || !/^\d*$/.test(melder)) {
+            alert(tr("Gruppen- und Meldernummer nur als Ziffern eingeben.",
+                     "Enter zone and device number as digits only."));
+            return;
+        }
+        const result = analyse(etikett);
+        if (!result.ok && !confirm(format(tr("%s\n\nTrotzdem speichern?", "%s\n\nSave anyway?"), result.note))) {
+            return;
+        }
+        const data = getStoredData();
+        const clash = data.find(item => item.etikett !== etikett && gruppe && melder
+                                && item.gruppe === gruppe && item.melder === melder);
+        if (clash && !confirm(format(tr("Gruppe %s / Melder %s hat schon %s.\n\nTrotzdem speichern?",
+                                        "Zone %s / device %s already has %s.\n\nSave anyway?"),
+                                     gruppe, melder, clash.etikett))) {
+            return;
+        }
+        const entry = {
+            etikett: etikett,
+            art: result.art,
+            tools8000: result.tools8000,
+            pruefziffer_ok: result.ok,
+            gruppe: gruppe,
+            melder: melder,
+            zusatztext: document.getElementById("input-zusatz").value.trim(),
+            bemerkung: document.getElementById("input-bemerkung").value.trim(),
             zeitstempel: new Date().toISOString()
         };
-
-        let existingIndex = currentData.findIndex(item => item.id === id);
-        if (existingIndex > -1) {
-            currentData[existingIndex] = entry;
+        const index = data.findIndex(item => item.etikett === etikett);
+        if (index > -1) {
+            data[index] = entry;
         } else {
-            currentData.push(entry);
+            data.push(entry);
         }
+        storeData(data);
 
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(currentData));
-
-        // Formular leeren (außer Gruppe)
-        document.getElementById('melder-id').value = "";
-        document.getElementById('input-melder').value = "";
-        document.getElementById('input-zusatz').value = "";
-        document.getElementById('input-bemerkung').value = "";
-
+        // Zone stays, the next device number is suggested.
+        document.getElementById("melder-id").value = "";
+        document.getElementById("input-melder").value = melder ? String(Number(melder) + 1) : "";
+        document.getElementById("input-zusatz").value = "";
+        document.getElementById("input-bemerkung").value = "";
+        showAnalysis();
         updatePreview();
-        alert("Daten erfolgreich lokal gesichert!");
+        setStatus(format(tr("Gespeichert: %s (Gruppe %s / Melder %s)", "Saved: %s (zone %s / device %s)"),
+                         etikett, gruppe || "-", melder || "-"), "ok");
+        if (scanAgain) {
+            startScanner();
+        }
+    }
+
+    function sortKey(item) {
+        return [Number(item.gruppe || 0), Number(item.melder || 0), item.etikett];
+    }
+
+    function compareEntries(a, b) {
+        const ka = sortKey(a);
+        const kb = sortKey(b);
+        for (let i = 0; i < ka.length; i++) {
+            if (ka[i] < kb[i]) return -1;
+            if (ka[i] > kb[i]) return 1;
+        }
+        return 0;
+    }
+
+    function exportObject() {
+        return {
+            format: FILE_FORMAT,
+            version: 1,
+            app_version: SCRIPT_VERSION,
+            exportiert: new Date().toISOString(),
+            eintraege: getStoredData().sort(compareEntries)
+        };
     }
 
     function updatePreview() {
-        let data = getStoredData();
-        document.getElementById('data-count').innerText = data.length + " Melder gespeichert";
-        document.getElementById('json-preview').innerText = JSON.stringify(data, null, 2);
+        const data = getStoredData().sort(compareEntries);
+        document.getElementById("data-count").innerText = format(
+            tr("%s Melder gespeichert", "%s devices saved"), data.length);
+        const list = document.getElementById("entry-list");
+        list.innerHTML = "";
+        data.forEach(item => {
+            const li = document.createElement("li");
+            const text = document.createElement("div");
+            text.className = "entry";
+            text.title = tr("Zum Ändern antippen", "Tap to edit");
+            const head = document.createElement("div");
+            head.innerText = format(tr("Gr. %s / M. %s - %s", "Zone %s / dev. %s - %s"),
+                                    item.gruppe || "-", item.melder || "-", item.etikett);
+            const sub = document.createElement("small");
+            sub.innerText = [item.zusatztext, item.bemerkung].filter(Boolean).join(" | ")
+                            + (item.pruefziffer_ok ? "" : " " + tr("(Nummer prüfen)", "(check number)"));
+            text.append(head, sub);
+            text.onclick = () => {
+                loadEntry(item);
+                setStatus(format(tr("%s geladen - Speichern überschreibt", "%s loaded - saving overwrites it"),
+                                 item.etikett), "warn");
+                document.getElementById("form-card").scrollIntoView({ behavior: "smooth" });
+            };
+            const del = document.createElement("button");
+            del.className = "btn-danger";
+            del.innerText = "\u2715";
+            del.title = tr("Eintrag löschen", "Delete entry");
+            del.onclick = () => deleteEntry(item.etikett);
+            li.append(text, del);
+            list.append(li);
+        });
+        document.getElementById("json-preview").innerText = JSON.stringify(exportObject(), null, 2);
+    }
+
+    function deleteEntry(etikett) {
+        if (!confirm(format(tr("Eintrag %s löschen?", "Delete entry %s?"), etikett))) {
+            return;
+        }
+        storeData(getStoredData().filter(item => item.etikett !== etikett));
+        updatePreview();
+    }
+
+    function exportFileName() {
+        const now = new Date();
+        const pad = value => String(value).padStart(2, "0");
+        return "bma_melder_" + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate())
+               + "_" + pad(now.getHours()) + pad(now.getMinutes()) + ".json";
     }
 
     function shareData() {
-        let dataStr = localStorage.getItem(STORAGE_KEY);
-        if (!dataStr || dataStr === "[]") {
-            alert("Keine Daten zum Übertragen vorhanden.");
+        const content = exportObject();
+        if (!content.eintraege.length) {
+            alert(tr("Keine Daten zum Übertragen vorhanden.", "No data to send."));
             return;
         }
-
-        let blob = new Blob([dataStr], { type: "application/json" });
-        let file = new File([blob], "bma_export.json", { type: "application/json" });
-
+        const name = exportFileName();
+        const text = JSON.stringify(content, null, 2);
+        const file = new File([text], name, { type: "application/json" });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
             navigator.share({
                 files: [file],
-                title: 'BMA Melder Export',
-                text: 'Hier sind die gescannten Melderdaten im JSON-Format.'
-            }).catch(err => console.log("Teilen abgebrochen", err));
-        } else {
-            let mailtoLink = "mailto:?subject=BMA%20Melder%20Export&body=" + encodeURIComponent(dataStr);
-            window.location.href = mailtoLink;
+                title: tr("BMA Melder Export", "BMA device export"),
+                text: tr("Gescannte Melderdaten (JSON)", "Scanned device data (JSON)")
+            }).catch(err => console.log("share cancelled", err));
+            return;
         }
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(file);
+        link.download = name;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     }
 
     function clearLocalStorage() {
-        if (confirm("Möchten Sie wirklich ALLE gespeicherten Melderdaten von diesem iPhone löschen?")) {
+        if (confirm(tr("Wirklich ALLE gespeicherten Melderdaten auf diesem Gerät löschen?",
+                       "Really delete ALL saved device data on this device?"))) {
             localStorage.removeItem(STORAGE_KEY);
             updatePreview();
         }
