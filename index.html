@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <!-- BMA Melder-Scanner - SCRIPT_VERSION 01.07R000 - AI_CREDITS_USED: 55 -->
+    <!-- BMA Melder-Scanner - SCRIPT_VERSION 01.08R000 - AI_CREDITS_USED: 2583 -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="01.07R000">
+    <meta name="version" content="01.08R000">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Melder-Scanner">
     <title>BMA Melder-Scanner</title>
@@ -22,9 +22,20 @@
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); margin: 0; padding: 15px; color: #000; }
         .container { max-width: 500px; margin: 0 auto; }
         h1, h2 { text-align: center; color: #1c1c1e; margin-bottom: 10px; font-size: 22px; }
-        .version-tag { text-align: center; font-size: 12px; color: #8e8e93; margin-top: -8px; margin-bottom: 15px; font-weight: bold; }
+        .version-tag { text-align: center; font-size: 12px; color: #8e8e93; margin-top: -8px; margin-bottom: 8px; font-weight: bold; }
+        .lang { display: flex; justify-content: center; margin-bottom: 15px; }
+        .lang button { width: auto; margin: 0; padding: 6px 16px; font-size: 14px; background: #fff; color: var(--primary); border: 1px solid var(--primary); border-radius: 0; }
+        .lang button:first-child { border-radius: 8px 0 0 8px; }
+        .lang button:last-child { border-radius: 0 8px 8px 0; border-left: none; }
+        .lang button.active { background: var(--primary); color: #fff; }
         .card { background: var(--card); padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
-        #reader { width: 100%; border-radius: 8px; overflow: hidden; background: #000; margin-top: 8px; }
+        /* The scan view is laid out wider than the screen and shrunk: html5-qrcode decodes the frame in its CSS size. */
+        #reader-frame { width: 100%; border-radius: 8px; overflow: hidden; background: #000; margin-top: 8px; }
+        #reader { width: 1600px; background: #000; transform-origin: 0 0; }
+        .cam-tool { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 14px; color: #3a3a3c; }
+        .cam-tool select { flex: 1; padding: 8px; font-size: 15px; border: 1px solid #c7c7cc; border-radius: 8px; background: #fff; }
+        .cam-tool input[type=range] { flex: 1; padding: 0; border: none; }
+        .result-box .type { display: block; font-size: 15px; margin-top: 4px; }
 
         .result-box { text-align: center; font-size: 18px; font-weight: bold; color: var(--primary); padding: 10px; border: 2px dashed var(--primary); border-radius: 8px; margin: 10px 0; background: #f0f7ff; }
         .result-box.ok { color: #248a3d; border-color: var(--success); background: #effaf2; }
@@ -68,16 +79,35 @@
 <div class="container">
     <h1>BMA Melder-Scanner</h1>
     <div class="version-tag" id="version-tag"></div>
+    <div class="lang">
+        <button id="lang-de" onclick="setLanguage('de')" title="Deutsch">DE</button>
+        <button id="lang-en" onclick="setLanguage('en')" title="English">EN</button>
+    </div>
 
     <!-- 1. SCANNER -->
     <div class="card">
         <button id="btn-start-cam" class="btn-primary" onclick="startScanner()"
                 data-de="Kamera aktivieren" data-en="Activate camera">Kamera aktivieren</button>
-        <div id="reader" class="hidden"></div>
+        <div id="reader-frame" class="hidden"><div id="reader"></div></div>
+        <div id="camera-row" class="cam-tool hidden">
+            <span data-de="Kamera" data-en="Camera">Kamera</span>
+            <select id="camera-select" onchange="changeCamera()"></select>
+        </div>
+        <div id="zoom-row" class="cam-tool hidden">
+            <span data-de="Zoom" data-en="Zoom">Zoom</span>
+            <input type="range" id="zoom" oninput="setZoom()">
+            <span id="zoom-value"></span>
+        </div>
         <button id="btn-stop-cam" class="btn-secondary hidden" onclick="stopScanner()"
                 data-de="Scan abbrechen" data-en="Cancel scan">Scan abbrechen</button>
+        <button id="btn-photo" class="btn-secondary" onclick="takePhoto()"
+                data-de="Foto aufnehmen und auswerten" data-en="Take a photo and read it">Foto aufnehmen und auswerten</button>
+        <input type="file" id="photo-input" class="hidden" accept="image/*" capture="environment" onchange="scanPhoto(this)">
+        <div id="file-reader" class="hidden"></div>
         <div id="scan-result" class="result-box" data-de="Bitte Kamera aktivieren oder Nummer eintippen"
              data-en="Activate the camera or type the number">Bitte Kamera aktivieren oder Nummer eintippen</div>
+        <div class="hint" data-de="Unscharf? Handy 15-20 cm vom Etikett weg halten - der Barcode muss den Rahmen nicht füllen. Hilft das nicht: Zoom, andere Kamera oder &quot;Foto aufnehmen&quot; (Antippen stellt scharf)."
+             data-en="Blurred? Hold the phone 15-20 cm away from the label - the bar code need not fill the frame. If that does not help: zoom, another camera or &quot;Take a photo&quot; (tap to focus).">Unscharf? Handy 15-20 cm vom Etikett weg halten - der Barcode muss den Rahmen nicht füllen. Hilft das nicht: Zoom, andere Kamera oder "Foto aufnehmen" (Antippen stellt scharf).</div>
     </div>
 
     <!-- 2. EINGABE -->
@@ -135,12 +165,24 @@
 </div>
 
 <script>
-    const SCRIPT_VERSION = "01.07R000";
+    const SCRIPT_VERSION = "01.08R000";
     const STORAGE_KEY = "bma_scanned_detectors";
+    const CAMERA_KEY = "bma_scanner_camera";
+    const ZOOM_KEY = "bma_scanner_zoom";
     const FILE_FORMAT = "bma-melder-scanner";
-    const GERMAN = (navigator.language || "de").toLowerCase().startsWith("de");
+    const LANGUAGE_KEY = "bma_scanner_language";
+    // Language chosen on the page (DE / EN), else the one of the browser.
+    let GERMAN = localStorage.getItem(LANGUAGE_KEY)
+        ? localStorage.getItem(LANGUAGE_KEY) === "de"
+        : (navigator.language || "de").toLowerCase().startsWith("de");
+    // CSS width of the scan view (#reader): html5-qrcode shrinks every frame to the size of the scan box in CSS
+    // pixels before decoding - on a phone screen only ~300 px, so the bar code had to fill the frame (too close for
+    // the iPhone 14 to focus). Laid out 1600 px wide and shrunk on screen, it decodes at about the camera resolution.
+    const READER_WIDTH = 1600;
+    const PHOTO_MAX_SIDE = 3000;  // photos are shrunk to this before decoding (iOS canvas limit, decoding time)
 
     let scanner = null;
+    let fileScanner = null;
     let scanning = false;
     let taking = false;
     let scanAgain = false;
@@ -165,21 +207,395 @@
         document.getElementById("footer").innerText = format(
             tr("Version %s - Daten bleiben auf diesem Gerät, bis sie übertragen werden",
                "Version %s - data stays on this device until it is sent"), SCRIPT_VERSION);
+        document.getElementById("lang-de").classList.toggle("active", GERMAN);
+        document.getElementById("lang-en").classList.toggle("active", !GERMAN);
+    }
+
+    function setLanguage(language) {
+        GERMAN = language === "de";
+        localStorage.setItem(LANGUAGE_KEY, language);
+        applyLanguage();
+        updatePreview();
+        showAnalysis();
+        if (scanning) {
+            setStatus(tr("Barcode quer in den Rahmen halten, 15-20 cm Abstand ...",
+                         "Hold the bar code across the frame, 15-20 cm away ..."));
+        } else {
+            const box = document.getElementById("scan-result");
+            setStatus(tr(box.dataset.de, box.dataset.en));
+        }
     }
 
     window.onload = function() {
         applyLanguage();
         updatePreview();
+        if (window.ResizeObserver) {
+            const observer = new ResizeObserver(fitReader);
+            observer.observe(document.getElementById("reader-frame"));
+            observer.observe(document.getElementById("reader"));
+        }
+        window.addEventListener("resize", fitReader);
         if (!window.isSecureContext) {
             setStatus(tr("Kamera nur über HTTPS möglich - Nummer bitte eintippen",
                          "Camera needs HTTPS - please type the number"), "warn");
         }
     };
 
-    function setStatus(text, kind) {
+    function setStatus(text, kind, detail) {
         const box = document.getElementById("scan-result");
         box.innerText = text;
+        if (detail) {
+            const line = document.createElement("span");
+            line.className = "type";
+            line.innerText = detail;
+            box.append(line);
+        }
         box.className = "result-box" + (kind ? " " + kind : "");
+    }
+
+    // BEGIN DEVICE_TYPES - device type of a label as in the EFI loop tool (efi_loop.device_type, efi_loop_articles)
+    // BEGIN DEVICE_TABLE (generated by build_device_table.py - do not edit)
+    const DEVICE_TABLE = {
+        types: {
+            "0": ["unbekannt","Unknown"],
+            "1": ["O-Melder","O-Detector"],
+            "2": ["OT-Melder","OT-Detector"],
+            "3": ["OTI-Melder","OTI-Detector"],
+            "4": ["O2T-Melder","O2T-Detector"],
+            "5": ["OG-Melder","OG-Detector"],
+            "6": ["OTG-Melder","OTG-Detector"],
+            "7": ["Thermomax. Melder","Fixed Temp. Detector"],
+            "8": ["Thermomax. Melder (erhöhte Temperatur)","Fixed Temp. Detector (high temp)"],
+            "9": ["Thermodiff. Melder","RoR Temperature Detector"],
+            "10": ["I-Melder","I-Detector"],
+            "11": ["Warntongeber (System)","System Sounder"],
+            "12": ["Signalsockel (Base)","Sounder Base"],
+            "13": ["Voice","Voice"],
+            "14": ["Alarm","Alarm"],
+            "15": ["Blitzleuchte","Strobe"],
+            "16": ["Druckknopf Melder","MCP"],
+            "17": ["Technischer Alarmbaustein (TAL)","Technical Alarm Module (TAL)"],
+            "18": ["12 Relais Koppler","12 Relay Transponder"],
+            "19": ["32 AE Koppler","32 OC Transponder"],
+            "20": ["1 Meldergruppe Koppler","1 Zone Transponder"],
+            "21": ["4 Meldergruppen /2 Relais Koppler","4 Zone/2 Relay Transponder"],
+            "22": ["Fremdmelder Anschaltmodul","RZT Transponder"],
+            "23": ["Kommunikations- koppler","Communications Transponder"],
+            "24": ["Europanel Koppler","Europanel Transponder"],
+            "25": ["UV-Melder","UV-Detector"],
+            "26": ["IR-Melder","IR-Detector"],
+            "27": ["Gasmelder 3","Gas Detector 3"],
+            "28": ["el.-stat.","el.-stat."],
+            "29": ["BEAM-Melder","BEAM-Detector"],
+            "30": ["Voicealarm","Voicealarm"],
+            "31": ["Funkkoppler","RF Transponder"],
+            "32": ["FAT","FIP"],
+            "33": ["Rauchansaug- system","Aspirating smoke detector"],
+            "34": ["O2T mit opt. Alarmgeber","O2T with Flasher"],
+            "35": ["O2T mit akust. Alarmgeber","O2T with Sounder"],
+            "36": ["O2T mit opt./akust. Alarmgeber","O2T with Sounder/Flasher"],
+            "37": ["O2T mit Sprachausgabe und Flash","O2T with Voice and Flasher"],
+            "38": ["O2T mit Sprachausgabe","O2T with Voice"],
+            "39": ["O mit akust. Alarmgeber","O with Sounder"],
+            "40": ["FSA Koppler","Door Holder transponder"],
+            "41": ["Funk-Gateway","Wireless-Gateway"],
+            "42": ["IQ8 Alarm Akustik mit Sprachausgabe","IQ8 Alarm Sound with speech"],
+            "43": ["IQ8 Alarm Akustik","IQ8 Alarm Sound"],
+            "44": ["IQ8 Alarm Optisch/Akustik","IQ8 Alarm Flash/Sound"],
+            "45": ["IQ8 Alarm Optisch","IQ8 Alarm Flash"],
+            "46": ["OTblue-Melder","OTblue-Detector"],
+            "47": ["IQ8 Alarm Optisch/Akustik mit Sprachausgabe","IQ8 Alarm Flash/Speech"],
+            "48": ["Alarmierungskoppler","Alarm transponder"],
+            "49": ["Rauchklappen Steuerung","Fire Vent Control"],
+            "50": ["Thermodiff. Melder (ATEX)","RoR Temperature Detector (ATEX)"],
+            "51": ["O-Melder (ATEX)","O-Detector (ATEX)"],
+            "52": ["O2T-Melder (ATEX)","O2T-Detector (ATEX)"],
+            "53": ["Thermodiff. Melder","RoR Temperature Detector"],
+            "54": ["O-Melder","O-Detector"],
+            "55": ["O2T-Melder","O2T-Detector"],
+            "56": ["Univario-Koppler","Univario transp."],
+            "57": ["FCT-Koppler","FCT-transp."],
+            "58": ["Univario-Koppler","Univario transp."],
+            "59": ["IQ8 Alarm+ Akustik mit Sprachausgabe","IQ8 Alarm+ Speech"],
+            "60": ["IQ8 Alarm+ Akustik","IQ8 Alarm+ Sound"],
+            "61": ["IQ8 Alarm+ Optisch/Akustik","IQ8 Alarm+ Flash/Sound"],
+            "62": ["IQ8 Alarm+ Optisch","IQ8 Alarm+ Flash"],
+            "63": ["IQ8 Alarm+ Optisch/Akustik mit Sprachausgabe","IQ8 Alarm + Flash/Speech"],
+            "64": ["FAAST LT EB Rauchansaugsystem","FAAST LT EB Aspirating smoke detector"],
+            "65": ["Druckknopf Melder (ATEX)","Manual Call Point  (ATEX)"],
+            "66": ["Voltage Monitoring Module(DUO)","Voltage Monitoring Module(DUO)"],
+            "67": ["OMNI LED (DUO)","OMNI LED (DUO)"],
+            "68": ["Exit LED (DUO)","Exit LED (DUO)"],
+            "69": ["FCT LP-Koppler","FCT LP-transp."],
+            "70": ["Sondermelder Anschaltmodul","SD Transponder"],
+            "71": ["O-Melder ST","O-Detector ST"],
+            "72": ["OT-Melder ST","OT-Detector ST"],
+            "73": ["O2T-Melder ST","O2T-Detector ST"],
+            "74": ["Thermodiff. Melder ST","Thermodiff. Detector ST"],
+            "75": ["O2T m.akust. Alarmgeber ST","O2T with Sounder ST"],
+            "76": ["O m.akust. Alarmgeber ST","O with Sounder ST"],
+            "77": ["OTblue-Melder ST","OTblue-Detector ST"],
+            "78": ["O2T mit Sprachausgabe und Flash ST","O2T with Voice and Flasher ST"],
+            "79": ["O2T mit Sprachausgabe ST","O2T with Voice ST"],
+            "80": ["O2T mit opt. Alarmgeber ST","O2T with Flasher ST"]
+        },
+        rules: [
+            [1,null,0,16777215,3],
+            [2,null,1572864,6553599,46],
+            [3,null,0,16777215,10],
+            [4,null,0,16777215,7],
+            [5,null,0,16777215,8],
+            [6,0,0,15728639,9],
+            [6,0,15728640,16777215,50],
+            [6,1,0,16777215,9],
+            [7,0,0,15728639,1],
+            [7,0,15728640,16777215,51],
+            [7,1,0,16777215,1],
+            [13,0,0,15728639,16],
+            [13,0,15728640,16777215,65],
+            [13,1,0,15728639,16],
+            [15,0,0,15728639,4],
+            [15,0,15728640,16777215,52],
+            [15,1,0,16777215,4],
+            [33,null,0,16777215,3],
+            [34,null,0,9999999,2],
+            [34,null,10000000,12582911,46],
+            [34,null,12582912,16777215,2],
+            [35,null,0,16777215,10],
+            [36,null,0,16777215,7],
+            [37,null,0,16777215,8],
+            [38,0,0,15728639,9],
+            [38,0,15728640,16777215,50],
+            [38,1,0,16777215,9],
+            [39,0,0,15728639,1],
+            [39,0,15728640,16777215,51],
+            [39,1,0,16777215,1],
+            [40,null,0,16777215,18],
+            [42,null,0,16777215,19],
+            [43,null,0,999999,21],
+            [43,null,1000000,1699999,48],
+            [43,null,1700000,1799999,70],
+            [43,null,1800000,1809999,48],
+            [43,null,1810000,1899999,64],
+            [43,null,1900000,1999999,58],
+            [43,null,6000000,6999999,56],
+            [43,null,7000000,7999999,40],
+            [43,null,8000000,8999999,22],
+            [43,null,9000000,9999999,32],
+            [44,null,0,16777215,20],
+            [45,0,0,15728639,16],
+            [45,0,15728640,16777215,65],
+            [45,1,0,15728639,16],
+            [46,null,0,7999999,23],
+            [46,null,8000000,8999999,33],
+            [46,null,9000000,16777215,23],
+            [47,0,0,15728639,4],
+            [47,0,15728640,16777215,52],
+            [47,1,0,16777215,4],
+            [49,null,0,16777215,6],
+            [51,null,2097152,4194303,66],
+            [51,null,4194304,6291455,67],
+            [51,null,6291456,8388607,68],
+            [54,null,0,2097151,31],
+            [54,null,2097152,4194303,41],
+            [54,null,4194304,16777215,31],
+            [55,null,0,16777215,39],
+            [56,null,0,2097151,14],
+            [56,null,2097152,2936831,45],
+            [56,null,2936832,3399679,62],
+            [56,null,4194304,4571135,43],
+            [56,null,4571136,5242879,60],
+            [56,null,5242880,5726207,43],
+            [56,null,5726208,6291455,60],
+            [56,null,6291456,6447103,44],
+            [56,null,6447104,7077887,61],
+            [56,null,7340032,7446527,61],
+            [56,null,12582912,12595199,42],
+            [56,null,12595200,12607487,59],
+            [56,null,13526630,13631487,42],
+            [56,null,13631488,13643775,59],
+            [56,null,14663680,14671871,59],
+            [56,null,14671872,14680063,42],
+            [56,null,14680064,14704639,47],
+            [56,null,14704640,14729215,63],
+            [56,null,15704064,15753215,63],
+            [56,null,16728064,16752639,63],
+            [56,null,16752640,16777215,47],
+            [57,null,0,16777215,13],
+            [59,null,0,16777215,11],
+            [60,null,0,16777215,12],
+            [61,null,0,8388607,17],
+            [61,null,8388608,13078527,57],
+            [61,null,13078528,13377535,69],
+            [61,null,13377536,16777215,57],
+            [62,null,0,16777215,15],
+            [63,null,2097152,4194303,34],
+            [63,null,4194304,6291455,35],
+            [63,null,6291456,8388607,36],
+            [63,null,12582912,14680063,38],
+            [63,null,14680064,16777214,37]
+        ],
+        articles: [
+            [0,1,0,155673,1,null,null,"761973","OTI-Melder 9200","OTI detector 9200"],
+            [0,1,155674,9999999,1,null,null,"801973","OTI-Melder 9200","OTI detector 9200"],
+            [0,2,0,399999,1,null,null,"761373","OT-Melder 9200","OT detector 9200"],
+            [0,2,400000,9999999,1,null,null,"801373","OT-Melder 9200","OT detector 9200"],
+            [0,2,10000000,11534335,1,1,null,"802375","OTblue-Melder IQ8","OTblue detector IQ8"],
+            [0,2,11534336,12320767,1,1,null,"802375.F","OTblue-Melder IQ8 Frankreich","OTblue detector IQ8 France"],
+            [0,2,12320768,12582911,1,1,null,"802379","OTblue-Melder IQ8 LKM","OTblue detector IQ8 LKM"],
+            [0,2,12582912,16777215,1,1,null,"802373","OT-Melder IQ8","OT detector IQ8"],
+            [0,2,1572864,5963775,0,null,null,"800375","OTblue-Melder ESdetect","OTblue detector ESdetect"],
+            [0,2,5963776,6291455,0,null,null,"800375.F","OTblue-Melder ESdetect Frankreich","OTblue detector ESdetect France"],
+            [0,2,6291456,6553599,0,null,null,"800379","OTblue-Melder ESdetect LKM","OTblue detector ESdetect LKM"],
+            [0,3,0,352626,1,null,null,"761071","I-Melder 9200","I detector 9200"],
+            [0,3,352627,9999999,1,null,null,"801071","I-Melder 9200","I detector 9200"],
+            [0,4,0,100002,1,null,null,"761171","TM-Melder 9200","TM detector 9200"],
+            [0,4,100003,9999999,1,null,null,"801171","TM-Melder 9200","TM detector 9200"],
+            [0,4,10000000,15999999,1,1,null,"802171","TM-Melder IQ8","TM detector IQ8"],
+            [0,4,16000000,16777215,1,1,null,"802177","TME-Melder IQ8","TME detector IQ8"],
+            [0,4,15466496,15728639,1,0,null,"803171","TM-Melder IQ8 -30 °C","TM detector IQ8 -30 °C"],
+            [0,4,1572864,6553599,0,null,null,"800171","TM-Melder ESdetect","TM detector ESdetect"],
+            [0,5,1572864,6553599,0,null,null,"800177","TME-Melder ESdetect","TME detector ESdetect"],
+            [0,6,0,227461,1,null,null,"761271","TD-Melder 9200","TD detector 9200"],
+            [0,6,227462,9999999,1,null,null,"801271","TD-Melder 9200","TD detector 9200"],
+            [0,6,10000000,15728639,1,1,null,"802271","TD-Melder IQ8","TD detector IQ8"],
+            [0,6,10000000,15728639,1,0,null,"803271","TD-Melder IQ8 DIBt","TD detector IQ8 DIBt"],
+            [0,6,15728640,16777215,1,0,null,"803271.EX","TD-Melder IQ8 ATEX","TD detector IQ8 ATEX"],
+            [0,6,1572864,6553599,0,null,null,"800271","TD-Melder ESdetect","TD detector ESdetect"],
+            [0,7,0,1393242,1,null,null,"761371","O-Melder 9200","O detector 9200"],
+            [0,7,1393243,9999999,1,null,null,"801371","O-Melder 9200","O detector 9200"],
+            [0,7,10000000,10499999,1,1,null,"802371","O-Melder IQ8","O detector IQ8"],
+            [0,7,10500000,10999999,1,1,null,"802371.VC0","O-Melder IQ8 China","O detector IQ8 China"],
+            [0,7,11000000,14999999,1,1,null,"802371","O-Melder IQ8","O detector IQ8"],
+            [0,7,15000000,15728639,1,1,null,"802371.VC0","O-Melder IQ8 China","O detector IQ8 China"],
+            [0,7,15728640,16777215,1,1,null,"802371","O-Melder IQ8","O detector IQ8"],
+            [0,7,10000000,15728639,1,0,null,"803371","O-Melder IQ8 DIBt","O detector IQ8 DIBt"],
+            [0,7,15728640,16777215,1,0,null,"803371.EX","O-Melder IQ8 ATEX","O detector IQ8 ATEX"],
+            [0,7,1572864,6553599,0,null,null,"800371","O-Melder ESdetect","O detector ESdetect"],
+            [0,8,0,28999,1,null,null,"768610","12-Relais-Koppler","12 relay transponder"],
+            [0,8,29000,9999999,1,null,null,"808610","12-Relais-Koppler","12 relay transponder"],
+            [0,10,0,17999,1,null,null,"768611","AE32-Koppler","AE32 transponder"],
+            [0,10,18000,9999999,1,null,null,"808611","AE32-Koppler","AE32 transponder"],
+            [0,11,0,111999,1,null,null,"788613","4G2R-Koppler","4G2R transponder"],
+            [0,11,112000,999999,1,null,null,"808613","4G2R-Koppler","4G2R transponder"],
+            [0,11,1000000,1699999,1,null,null,"808623.30","Alarmierungs-/SST-Koppler","Alarm/SST transponder"],
+            [0,11,1700000,1799999,1,null,null,"808623.40","Koppler für Sondermelder (EBT)","Transponder for special detectors (EBT)"],
+            [0,11,1800000,1809999,1,null,null,"801711 / 801722","FAAST LT (V1)","FAAST LT (V1)"],
+            [0,11,1810000,1899999,1,null,null,"801711.10 / 801722.10","FAAST LT (V2)","FAAST LT (V2)"],
+            [0,11,1900000,1999999,1,null,null,"808623.10","Alarmierungs-Koppler UniVario","Alarm transponder UniVario"],
+            [0,11,2000000,2099999,1,null,null,"583535","TMR-Modul (VaPa)","TMR module (VaPa)"],
+            [0,11,6000000,6999999,1,null,null,"808622","Flammenmelder-Koppler UniVario","Flame detector transponder UniVario"],
+            [0,11,7000000,7099999,1,null,null,"808619.10 / 808691","FSA-Koppler","FSA transponder"],
+            [0,11,7100000,7999999,1,null,null,"808629","FSA-Koppler (Alarmierung)","FSA transponder (alarm)"],
+            [0,11,8000000,8999999,1,null,null,"808630 / 808631","RZT-8000 (Fremdmelder-Anschaltmodul)","RZT-8000 (third-party detector module)"],
+            [0,11,9000000,9999999,1,null,null,"","FAT (Feuerwehr-Anzeigetableau)","FAT (fire alarm transponder)"],
+            [0,12,0,11999,1,null,null,"768614","1G-Koppler","1G transponder"],
+            [0,12,12000,9999999,1,null,null,"808614","1G-Koppler","1G transponder"],
+            [0,13,0,9999999,1,null,null,"804473.10","Druckknopfmelder 9200","MCP 9200"],
+            [0,13,15728640,16777215,1,null,null,"804924.EX / 804961.EX / 804963.EX","IQ8MCP ATEX","IQ8MCP ATEX"],
+            [0,13,10000000,13631487,1,0,0,"","IQ8MCP (einfach)","IQ8MCP (simple)"],
+            [0,13,10000000,13631487,1,1,0,"804905 / 804955 / 804961 / 804971 / 804973","IQ8MCP mit Trenner","IQ8MCP with isolator"],
+            [0,13,10000000,13631487,1,0,1,"804906 / 804956","IQ8MCP mit Relais","IQ8MCP with relay"],
+            [0,14,0,7999999,1,null,null,"","Lömi-Koppler (nicht unterstützt)","Lömi transponder (not supported)"],
+            [0,14,8000000,8999999,1,null,null,"","VESDA-Koppler","VESDA transponder"],
+            [0,14,9000000,9999999,1,null,null,"","Lömi-Koppler (nicht unterstützt)","Lömi transponder (not supported)"],
+            [0,15,0,9999999,1,null,null,"801374","O²T-Melder 9200","O²T detector 9200"],
+            [0,15,10000000,15728639,1,1,null,"802374","O²T-Melder IQ8","O²T detector IQ8"],
+            [0,15,10000000,15728639,1,0,null,"803374","O²T-Melder IQ8 DIBt","O²T detector IQ8 DIBt"],
+            [0,15,15728640,16777215,1,0,null,"803374.EX","O²T-Melder IQ8 ATEX","O²T detector IQ8 ATEX"],
+            [0,15,1572864,6553599,0,null,null,"800374","O²T-Melder ESdetect","O²T detector ESdetect"],
+            [1,1,10000000,16777215,1,null,null,"802473","OTG-Melder IQ8","OTG detector IQ8"],
+            [1,6,0,262143,1,null,null,"805595","Funkkoppler IQ8Wireless (nicht EN 54-25)","Wireless transponder IQ8Wireless (not EN 54-25)"],
+            [1,6,262144,2097151,1,null,null,"805595.10","Funkkoppler IQ8Wireless (EN 54-25)","Wireless transponder IQ8Wireless (EN 54-25)"],
+            [1,6,2097152,2359295,1,null,null,"805594","Funk-Gateway IQ8Wireless (nicht EN 54-25)","Wireless gateway IQ8Wireless (not EN 54-25)"],
+            [1,6,2359296,4194303,1,null,null,"805594.10","Funk-Gateway IQ8Wireless (EN 54-25)","Wireless gateway IQ8Wireless (EN 54-25)"],
+            [1,7,4194304,6291455,1,null,null,"802382","O-Melder mit Signalgeber (O/So)","O detector with sounder"],
+            [1,8,0,2097151,1,null,null,"806205 / 806206","IQ8Lumivox akustisch","IQ8Lumivox acoustical alarm device"],
+            [1,8,2097152,2621439,1,null,null,"807212","IQ8Alarm Blitz","IQ8Alarm flasher"],
+            [1,8,2621440,2831155,1,null,null,"807213","IQ8Alarm Blitz","IQ8Alarm flasher"],
+            [1,8,2831156,2887679,1,null,null,"807214","IQ8Alarm Blitz","IQ8Alarm flasher"],
+            [1,8,2887680,3399679,1,null,null,"807214RR / 807214WR / 807214WW","IQ8Alarm Blitz EN 54-23","IQ8Alarm flasher EN 54-23"],
+            [1,8,4194304,4571135,1,null,null,"807205 / 807206","IQ8Alarm Signalgeber","IQ8Alarm sounder"],
+            [1,8,4571136,5242879,1,null,null,"807205W / 807205R","IQ8Alarm Signalgeber EN 54-23","IQ8Alarm sounder EN 54-23"],
+            [1,8,5242880,5726207,1,null,null,"807205 / 807206","IQ8Alarm Signalgeber","IQ8Alarm sounder"],
+            [1,8,5726208,6291455,1,null,null,"807205W / 807205R","IQ8Alarm Signalgeber EN 54-23","IQ8Alarm sounder EN 54-23"],
+            [1,8,6291456,6447103,1,null,null,"807224","IQ8Alarm Kombisignalgeber","IQ8Alarm combined device"],
+            [1,8,6447104,7077887,1,null,null,"807224RR / 807224WR","IQ8Alarm Kombisignalgeber EN 54-23","IQ8Alarm combined device EN 54-23"],
+            [1,8,7340032,7446527,1,null,null,"807224RW","IQ8Alarm Kombisignalgeber EN 54-23","IQ8Alarm combined device EN 54-23"],
+            [1,8,12582912,12595199,1,null,null,"807322 / 807332","IQ8Alarm Sprache","IQ8Alarm speech"],
+            [1,8,12595200,12607487,1,null,null,"807322W / 807322R","IQ8Alarm Sprache EN 54-23","IQ8Alarm speech EN 54-23"],
+            [1,8,13526630,13631487,1,null,null,"807322 / 807332","IQ8Alarm Sprache","IQ8Alarm speech"],
+            [1,8,13631488,13643775,1,null,null,"807322W / 807322R","IQ8Alarm Sprache EN 54-23","IQ8Alarm speech EN 54-23"],
+            [1,8,14663680,14671871,1,null,null,"807322R/W.SV98 / .SV99","IQ8Alarm Sprache EN 54-23 (Kundentext)","IQ8Alarm speech EN 54-23 (customised)"],
+            [1,8,14671872,14680063,1,null,null,"807322/807332.SV98 / .SV99","IQ8Alarm Sprache (Kundentext)","IQ8Alarm speech (customised)"],
+            [1,8,14680064,14704639,1,null,null,"807372","IQ8Alarm Sprache mit Blitz","IQ8Alarm speech with flasher"],
+            [1,8,14704640,14729215,1,null,null,"807372RR / 807372WR","IQ8Alarm Sprache mit Blitz EN 54-23","IQ8Alarm speech with flasher EN 54-23"],
+            [1,8,15704064,15728639,1,null,null,"807372RR.SV98 / .SV99","IQ8Alarm Sprache mit Blitz EN 54-23 (Kundentext)","IQ8Alarm speech with flasher EN 54-23 (customised)"],
+            [1,8,15728640,15753215,1,null,null,"807372RW","IQ8Alarm Sprache mit Blitz EN 54-23","IQ8Alarm speech with flasher EN 54-23"],
+            [1,8,16728064,16752639,1,null,null,"807372RW.SV98 / .SV99","IQ8Alarm Sprache mit Blitz EN 54-23 (Kundentext)","IQ8Alarm speech with flasher EN 54-23 (customised)"],
+            [1,8,16752640,16777215,1,null,null,"807372.SV98 / .SV99","IQ8Alarm Sprache mit Blitz (Kundentext)","IQ8Alarm speech with flasher (customised)"],
+            [1,13,0,2097151,1,null,null,"804868","IQ8TAL mit Taster","IQ8TAL with button"],
+            [1,13,3407872,3932159,1,null,null,"804866.VC0","Hydrant-Druckknopf China","Hydrant push button China"],
+            [1,13,3932160,4194303,1,null,null,"","IQ8TAL mit Taster China (ehemals)","IQ8TAL with button China (former)"],
+            [1,13,4194304,6291455,1,null,null,"804980","IQ8TAL","IQ8TAL"],
+            [1,13,7864320,8388607,1,null,null,"804868.VC0","IQ8TAL ohne Taster China","IQ8TAL w/o button China"],
+            [1,13,8388608,10485759,1,null,null,"","IQ8FCT mit Taster","IQ8FCT with button"],
+            [1,13,12582912,12881919,1,null,null,"804981 / 804867","IQ8FCT ohne Taster","IQ8FCT w/o button"],
+            [1,13,12881920,13078527,1,null,null,"808606","IQ8FCT XS","IQ8FCT XS"],
+            [1,13,13078528,13377535,1,null,null,"808621","IQ8FCT LP","IQ8FCT LP"],
+            [1,13,13377536,14577663,1,null,null,"808606","IQ8FCT XS","IQ8FCT XS"],
+            [1,15,2097152,4194303,1,null,null,"802383","O²T-Melder mit Blitz (O²T/F)","O²T detector with flasher"],
+            [1,15,4194304,6291455,1,null,null,"802384","O²T-Melder mit Signalgeber (O²T/So)","O²T detector with sounder"],
+            [1,15,12582912,14680063,1,null,null,"802386","O²T-Melder mit Sprache (O²T/Sp)","O²T detector with speech"],
+            [1,15,14680064,16777215,1,null,null,"802385","O²T-Melder mit Sprache und Blitz (O²T/FSp)","O²T detector with speech and flasher"]
+        ]
+    };
+    // END DEVICE_TABLE
+
+    // Device label without check digit (serial number as tools 8000 shows it): 9 digits type + production number or
+    // 11 digits flags + type + production number (efi_loop_tools8000.serial_from_tools8000). Returns the tools 8000
+    // type number and names and the article (number, German, English) or null; null if it is no serial number.
+    function labelDevice(body) {
+        let flags = 0;
+        let raw;
+        let production;
+        if (/^\d{9}$/.test(body)) {
+            raw = Number(body.slice(0, 2));
+            production = Number(body.slice(2));
+        } else if (/^\d{11}$/.test(body)) {
+            flags = Number(body.slice(0, 1));
+            raw = Number(body.slice(1, 3));
+            production = Number(body.slice(3));
+        } else {
+            return null;
+        }
+        if (raw > 0x3F || production > 0xFFFFFF || flags > 3) {
+            return null;
+        }
+        const isolator = flags & 1;
+        const output = (flags >> 1) & 1;
+        const rule = DEVICE_TABLE.rules.find(r => r[0] === raw && (r[1] === null || r[1] === isolator)
+                                             && r[2] <= production && production <= r[3]);
+        const type = rule ? rule[4] : 0;
+        const plus = (raw >> 4) & 1;
+        const kind = raw & 0x0F;
+        const standard = (raw >> 5) & 1;
+        const row = DEVICE_TABLE.articles.find(a => a[0] === plus && a[1] === kind
+                                               && a[2] <= production && production <= a[3] && a[4] === standard
+                                               && (a[5] === null || a[5] === isolator)
+                                               && (a[6] === null || a[6] === output));
+        return { type: type, name: DEVICE_TABLE.types[String(type)] || DEVICE_TABLE.types["0"],
+                 article: row ? row.slice(7, 10) : null };
+    }
+    // END DEVICE_TYPES
+
+    // Text of the device type: exact name and article number, else the tools 8000 type; "" if unknown.
+    function deviceText(device) {
+        if (device && device.article) {
+            const name = tr(device.article[1], device.article[2]);
+            return device.article[0] ? format(tr("%s (Art.-Nr. %s)", "%s (article %s)"), name, device.article[0]) : name;
+        }
+        return device && device.type ? tr(device.name[0], device.name[1]) : "";
     }
 
     // Check digit of the device label as in efi_loop.check_digit: weights 3 and 1 from the right (EAN).
@@ -194,32 +610,40 @@
     function analyse(raw) {
         const text = raw.replace(/\s+/g, "");
         if (!text) {
-            return { ok: false, art: "", tools8000: "", note: "" };
+            return { ok: false, art: "", tools8000: "", note: "", typ: "" };
         }
         if (!/^\d+$/.test(text)) {
-            return { ok: false, art: "unbekannt", tools8000: "",
+            return { ok: false, art: "unbekannt", tools8000: "", typ: "",
                      note: tr("Keine reine Ziffernfolge - bitte prüfen", "Not digits only - please check") };
         }
         if (text.length === 10 || text.length === 12) {
             const expected = checkDigit(text.slice(0, -1));
-            if (expected === text.slice(-1)) {
-                return { ok: true, art: "melder", tools8000: text.slice(0, -1),
-                         note: format(tr("Melder-Etikett, Prüfziffer richtig (tools 8000: %s)",
-                                         "Device label, check digit correct (tools 8000: %s)"), text.slice(0, -1)) };
+            if (expected !== text.slice(-1)) {
+                return { ok: false, art: "unbekannt", tools8000: "", typ: "",
+                         note: format(tr("Prüfziffer falsch (erwartet %s) - bitte prüfen",
+                                         "Check digit wrong (expected %s) - please check"), expected) };
             }
-            return { ok: false, art: "unbekannt", tools8000: "",
-                     note: format(tr("Prüfziffer falsch (erwartet %s) - bitte prüfen",
-                                     "Check digit wrong (expected %s) - please check"), expected) };
+            const device = labelDevice(text.slice(0, -1));
+            if (!device) {
+                return { ok: false, art: "unbekannt", tools8000: "", typ: "",
+                         note: tr("Keine gültige Seriennummer - bitte prüfen",
+                                  "No valid serial number - please check") };
+            }
+            const typ = deviceText(device);
+            return { ok: true, art: "melder", tools8000: text.slice(0, -1), typ: typ, typeKnown: Boolean(typ),
+                     note: format(tr("%s - Prüfziffer richtig (tools 8000: %s)",
+                                     "%s - check digit correct (tools 8000: %s)"),
+                                  typ || tr("Gerätetyp unbekannt", "device type unknown"), text.slice(0, -1)) };
         }
         if (text.length === 9 || text.length === 11) {
             const type = text.length === 9 ? text.slice(0, 2) : text.slice(1, 3);
             const name = type === "06" ? tr("Funksockel", "radio base")
                        : type === "12" ? tr("Funk-Interface", "radio interface")
                        : tr("Sockel", "base");
-            return { ok: true, art: "sockel", tools8000: text,
+            return { ok: true, art: "sockel", tools8000: text, typ: name, typeKnown: type === "06" || type === "12",
                      note: format(tr("Etikett ohne Prüfziffer: %s", "Label without check digit: %s"), name) };
         }
-        return { ok: false, art: "unbekannt", tools8000: "",
+        return { ok: false, art: "unbekannt", tools8000: "", typ: "",
                  note: format(tr("%s Stellen - erwartet 10 oder 12 (Melder) bzw. 9 oder 11 (Sockel)",
                                  "%s digits - expected 10 or 12 (device) or 9 or 11 (base)"), text.length) };
     }
@@ -241,7 +665,31 @@
     // Wide frame: the label bar codes are one-dimensional.
     function scanBox(width, height) {
         return { width: Math.max(50, Math.floor(width * 0.9)),
-                 height: Math.max(50, Math.floor(Math.min(height * 0.6, width * 0.5))) };
+                 height: Math.max(50, Math.floor(Math.min(height * 0.6, width * 0.4))) };
+    }
+
+    function fitReader() {
+        const frame = document.getElementById("reader-frame");
+        const reader = document.getElementById("reader");
+        const scale = Math.min(1, frame.clientWidth / READER_WIDTH);
+        if (!scale) {
+            return;
+        }
+        reader.style.transform = "scale(" + scale + ")";
+        frame.style.height = Math.round(reader.offsetHeight * scale) + "px";
+    }
+
+    function videoConstraints(cameraId) {
+        const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+        return Object.assign(cameraId ? { deviceId: { exact: cameraId } } : { facingMode: "environment" }, size);
+    }
+
+    function startCamera(cameraId) {
+        return scanner.start(cameraId || { facingMode: "environment" }, {
+            fps: 10,
+            qrbox: scanBox,
+            videoConstraints: videoConstraints(cameraId)
+        }, onScanSuccess, () => {});
     }
 
     async function startScanner() {
@@ -259,8 +707,9 @@
             return;
         }
         document.getElementById("btn-start-cam").classList.add("hidden");
-        document.getElementById("reader").classList.remove("hidden");
+        document.getElementById("reader-frame").classList.remove("hidden");
         document.getElementById("btn-stop-cam").classList.remove("hidden");
+        fitReader();
         setStatus(tr("Kamera wird gestartet ...", "Starting camera ..."));
         if (!scanner) {
             scanner = new Html5Qrcode("reader", {
@@ -272,26 +721,167 @@
         lastRead = "";
         lastReadCount = 0;
         taking = false;
+        const cameraId = localStorage.getItem(CAMERA_KEY) || "";
         try {
-            await scanner.start({ facingMode: "environment" }, {
-                fps: 10,
-                qrbox: scanBox,
-                videoConstraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
-            }, onScanSuccess, () => {});
-            scanning = true;
-            scanAgain = true;
-            setStatus(tr("Barcode quer in den Rahmen halten ...", "Hold the bar code across the frame ..."));
+            try {
+                await startCamera(cameraId);
+            } catch (err) {
+                if (!cameraId) {
+                    throw err;
+                }
+                localStorage.removeItem(CAMERA_KEY);  // chosen camera gone: back to the default rear camera
+                await startCamera("");
+            }
         } catch (err) {
             resetScannerView();
             setStatus(format(tr("Kamera nicht verfügbar (%s) - Nummer bitte eintippen",
                                 "Camera not available (%s) - please type the number"), err), "warn");
+            return;
+        }
+        scanning = true;
+        scanAgain = true;
+        fitReader();
+        setStatus(tr("Barcode quer in den Rahmen halten, 15-20 cm Abstand ...",
+                     "Hold the bar code across the frame, 15-20 cm away ..."));
+        setupCameraTools();
+    }
+
+    // Camera choice (after the permission the labels are known) and zoom where the browser offers it.
+    // enumerateDevices instead of Html5Qrcode.getCameras: that opens the camera a second time (iOS stops the first).
+    async function setupCameraTools() {
+        const select = document.getElementById("camera-select");
+        try {
+            const cameras = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+            const current = (scanner.getRunningTrackSettings() || {}).deviceId || "";
+            select.innerHTML = "";
+            cameras.forEach((camera, index) => {
+                const option = document.createElement("option");
+                option.value = camera.deviceId;
+                option.text = camera.label || format(tr("Kamera %s", "Camera %s"), index + 1);
+                option.selected = camera.deviceId === current;
+                select.append(option);
+            });
+            document.getElementById("camera-row").classList.toggle("hidden", cameras.length < 2);
+        } catch (err) {
+            document.getElementById("camera-row").classList.add("hidden");
+        }
+        const row = document.getElementById("zoom-row");
+        try {
+            const zoom = scanner.getRunningTrackCameraCapabilities().zoomFeature();
+            if (!zoom.isSupported() || !(zoom.max() > zoom.min())) {
+                throw new Error("no zoom");
+            }
+            const slider = document.getElementById("zoom");
+            slider.min = zoom.min();
+            slider.max = zoom.max();
+            slider.step = zoom.step() || 0.1;
+            const saved = Number(localStorage.getItem(ZOOM_KEY));
+            let value = zoom.value() || zoom.min();
+            if (saved && saved >= zoom.min() && saved <= zoom.max() && saved !== value) {
+                value = saved;
+                await zoom.apply(value);
+            }
+            slider.value = value;
+            showZoom();
+            row.classList.remove("hidden");
+        } catch (err) {
+            row.classList.add("hidden");
+        }
+        fitReader();
+    }
+
+    async function changeCamera() {
+        localStorage.setItem(CAMERA_KEY, document.getElementById("camera-select").value);
+        await stopScanner(false);
+        startScanner();
+    }
+
+    function showZoom() {
+        document.getElementById("zoom-value").innerText = Number(document.getElementById("zoom").value).toFixed(1) + "x";
+    }
+
+    function setZoom() {
+        const value = Number(document.getElementById("zoom").value);
+        showZoom();
+        localStorage.setItem(ZOOM_KEY, String(value));
+        try {
+            scanner.getRunningTrackCameraCapabilities().zoomFeature().apply(value).catch(err => console.log(err));
+        } catch (err) {
+            console.log(err);
         }
     }
 
     function resetScannerView() {
-        document.getElementById("reader").classList.add("hidden");
-        document.getElementById("btn-stop-cam").classList.add("hidden");
+        ["reader-frame", "camera-row", "zoom-row", "btn-stop-cam"].forEach(id => {
+            document.getElementById(id).classList.add("hidden");
+        });
         document.getElementById("btn-start-cam").classList.remove("hidden");
+    }
+
+    function takePhoto() {
+        document.getElementById("photo-input").click();
+    }
+
+    // Large photos shrunk to PHOTO_MAX_SIDE (JPEG); the original if it is smaller or cannot be read.
+    function shrinkImage(file) {
+        return new Promise(resolve => {
+            const url = URL.createObjectURL(file);
+            const image = new Image();
+            image.onload = () => {
+                URL.revokeObjectURL(url);
+                const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
+                if (scale === 1) {
+                    resolve(file);
+                    return;
+                }
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.round(image.naturalWidth * scale);
+                canvas.height = Math.round(image.naturalHeight * scale);
+                canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob(blob => resolve(blob ? new File([blob], "foto.jpg", { type: "image/jpeg" }) : file),
+                              "image/jpeg", 0.92);
+            };
+            image.onerror = () => {
+                URL.revokeObjectURL(url);
+                resolve(file);
+            };
+            image.src = url;
+        });
+    }
+
+    // Photo of the native camera (tap to focus, macro of newer iPhones), decoded like a scan.
+    async function scanPhoto(input) {
+        const file = input.files && input.files[0];
+        input.value = "";
+        if (!file) {
+            return;
+        }
+        if (typeof Html5Qrcode === "undefined") {
+            setStatus(tr("Scan-Bibliothek nicht geladen - Nummer bitte eintippen",
+                         "Scan library not loaded - please type the number"), "warn");
+            return;
+        }
+        if (scanning) {
+            await stopScanner(false);
+        }
+        scanAgain = false;
+        setStatus(tr("Foto wird ausgewertet ...", "Reading the photo ..."));
+        if (!fileScanner) {
+            fileScanner = new Html5Qrcode("file-reader", { formatsToSupport: supportedFormats(), verbose: false });
+        }
+        try {
+            const result = await fileScanner.scanFileV2(await shrinkImage(file), false);
+            takeNumber(result.decodedText.trim());
+        } catch (err) {
+            setStatus(tr("Kein Barcode im Foto erkannt - Etikett scharf und größer fotografieren oder Nummer eintippen",
+                         "No bar code found in the photo - take it sharper and closer or type the number"), "warn");
+        } finally {
+            try {
+                fileScanner.clear();
+            } catch (err) {
+                console.log(err);
+            }
+        }
     }
 
     async function stopScanner(byUser = true) {
@@ -310,14 +900,15 @@
         resetScannerView();
     }
 
-    // A label with a correct check digit is taken at once, anything else only after two equal reads in a row.
+    // A label with a correct check digit and a known device type is taken at once, anything else only after two equal
+    // reads in a row.
     function onScanSuccess(decodedText) {
         if (taking) {
             return;
         }
         const value = decodedText.trim();
         const result = analyse(value);
-        if (!result.ok) {
+        if (!result.ok || !result.typeKnown) {
             lastReadCount = value === lastRead ? lastReadCount + 1 : 1;
             lastRead = value;
             if (lastReadCount < 2) {
@@ -332,12 +923,16 @@
         document.getElementById("melder-id").value = value;
         const result = showAnalysis();
         const existing = getStoredData().find(item => item.etikett === value.replace(/\s+/g, ""));
+        const detail = result.typ || result.note;
         if (existing) {
             loadEntry(existing);
             setStatus(format(tr("%s schon erfasst - Speichern überschreibt",
-                                "%s already saved - saving overwrites it"), value), "warn");
+                                "%s already saved - saving overwrites it"), value), "warn", detail);
         } else {
-            setStatus(format(tr("Erkannt: %s", "Read: %s"), value), result.ok ? "ok" : "warn");
+            setStatus(format(tr("Erkannt: %s", "Read: %s"), value), result.ok && result.typeKnown ? "ok" : "warn",
+                      result.ok && !result.typeKnown && result.art === "melder"
+                          ? tr("Gerätetyp unbekannt - Nummer prüfen", "Device type unknown - check the number")
+                          : detail);
         }
         if (navigator.vibrate) {
             navigator.vibrate(100);
@@ -433,7 +1028,7 @@
         showAnalysis();
         updatePreview();
         setStatus(format(tr("Gespeichert: %s (Gruppe %s / Melder %s)", "Saved: %s (zone %s / device %s)"),
-                         etikett, gruppe || "-", melder || "-"), "ok");
+                         etikett, gruppe || "-", melder || "-"), "ok", result.typ);
         if (scanAgain) {
             startScanner();
         }
@@ -478,7 +1073,7 @@
             head.innerText = format(tr("Gr. %s / M. %s - %s", "Zone %s / dev. %s - %s"),
                                     item.gruppe || "-", item.melder || "-", item.etikett);
             const sub = document.createElement("small");
-            sub.innerText = [item.zusatztext, item.bemerkung].filter(Boolean).join(" | ")
+            sub.innerText = [analyse(item.etikett).typ, item.zusatztext, item.bemerkung].filter(Boolean).join(" | ")
                             + (item.pruefziffer_ok ? "" : " " + tr("(Nummer prüfen)", "(check number)"));
             text.append(head, sub);
             text.onclick = () => {
